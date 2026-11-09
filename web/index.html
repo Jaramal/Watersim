@@ -55,7 +55,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	PIC
 	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
 <br>
-	<canvas id="myCanvas" style="border:2px solid; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); max-width:calc(100vw - 4px); max-height:calc(100vh - 4px); touch-action:none"></canvas>
+	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none; image-rendering:pixelated"></canvas>
 	
 <script>
 
@@ -63,6 +63,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	var gl = canvas.getContext("webgl");	
 	canvas.width = 480;
 	canvas.height = 480;
+
+	// pixel perfect : 480 x 480 pixels physiques de l'écran, centré et calé sur la grille de pixels
+	function placeCanvas()
+	{
+		var dpr = window.devicePixelRatio || 1;
+		canvas.style.width = (canvas.width / dpr) + "px";
+		canvas.style.height = (canvas.height / dpr) + "px";
+		canvas.style.left = (Math.round((window.innerWidth * dpr - canvas.width) / 2) / dpr) + "px";
+		canvas.style.top = (Math.round((window.innerHeight * dpr - canvas.height) / 2) / dpr) + "px";
+	}
+	placeCanvas();
+	window.addEventListener('resize', placeCanvas);
 
 	canvas.focus();
 
@@ -1068,8 +1080,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	function startDrag(x, y) {
 		let bounds = canvas.getBoundingClientRect();
 
-		let mx = (x - bounds.left - canvas.clientLeft) * canvas.width / canvas.clientWidth;
-		let my = (y - bounds.top - canvas.clientTop) * canvas.height / canvas.clientHeight;
+		let mx = (x - bounds.left - canvas.clientLeft) * canvas.width / bounds.width;
+		let my = (y - bounds.top - canvas.clientTop) * canvas.height / bounds.height;
 		mouseDown = true;
 
 		x = mx / cScale;
@@ -1082,8 +1094,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	function drag(x, y) {
 		if (mouseDown) {
 			let bounds = canvas.getBoundingClientRect();
-			let mx = (x - bounds.left - canvas.clientLeft) * canvas.width / canvas.clientWidth;
-			let my = (y - bounds.top - canvas.clientTop) * canvas.height / canvas.clientHeight;
+			let mx = (x - bounds.left - canvas.clientLeft) * canvas.width / bounds.width;
+			let my = (y - bounds.top - canvas.clientTop) * canvas.height / bounds.height;
 			x = mx / cScale;
 			y = (canvas.height - my) / cScale;
 			setObstacle(x,y, false);
