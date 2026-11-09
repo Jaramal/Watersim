@@ -55,14 +55,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	PIC
 	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
 <br>
-	<canvas id="myCanvas" style="border:2px solid"></canvas>
+	<canvas id="myCanvas" style="border:2px solid; position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); max-width:calc(100vw - 4px); max-height:calc(100vh - 4px); touch-action:none"></canvas>
 	
 <script>
 
 	var canvas = document.getElementById("myCanvas");
 	var gl = canvas.getContext("webgl");	
-	canvas.width = window.innerWidth - 20;
-	canvas.height = window.innerHeight - 20;
+	canvas.width = 480;
+	canvas.height = 480;
 
 	canvas.focus();
 
@@ -275,7 +275,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 				// obstacle collision
 
-				if (d2 < minDist2) {
+				if (scene.showObstacle && d2 < minDist2) {
 
 					// var d = Math.sqrt(d2);
 					// var s = (minDist - d) / d;
@@ -998,7 +998,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		gl.clear(gl.DEPTH_BUFFER_BIT);
 
-		var diskColor = [1.0, 0.0, 0.0];
+		if (!scene.showObstacle)
+			return;
+
+		var diskColor = [0.0, 0.0, 0.0];
 
 		gl.useProgram(meshShader);
 		gl.uniform2f(gl.getUniformLocation(meshShader, 'domainSize'), simWidth, simHeight);
@@ -1065,8 +1068,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	function startDrag(x, y) {
 		let bounds = canvas.getBoundingClientRect();
 
-		let mx = x - bounds.left - canvas.clientLeft;
-		let my = y - bounds.top - canvas.clientTop;
+		let mx = (x - bounds.left - canvas.clientLeft) * canvas.width / canvas.clientWidth;
+		let my = (y - bounds.top - canvas.clientTop) * canvas.height / canvas.clientHeight;
 		mouseDown = true;
 
 		x = mx / cScale;
@@ -1079,8 +1082,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	function drag(x, y) {
 		if (mouseDown) {
 			let bounds = canvas.getBoundingClientRect();
-			let mx = x - bounds.left - canvas.clientLeft;
-			let my = y - bounds.top - canvas.clientTop;
+			let mx = (x - bounds.left - canvas.clientLeft) * canvas.width / canvas.clientWidth;
+			let my = (y - bounds.top - canvas.clientTop) * canvas.height / canvas.clientHeight;
 			x = mx / cScale;
 			y = (canvas.height - my) / cScale;
 			setObstacle(x,y, false);
@@ -1089,6 +1092,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	function endDrag() {
 		mouseDown = false;
+		scene.showObstacle = false;
 		scene.obstacleVelX = 0.0;
 		scene.obstacleVelY = 0.0;
 	}
@@ -1097,7 +1101,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		startDrag(event.x, event.y);
 	});
 
-	canvas.addEventListener('mouseup', event => {
+	window.addEventListener('mouseup', event => {
 		endDrag();
 	});
 
@@ -1110,6 +1114,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	});
 
 	canvas.addEventListener('touchend', event => {
+		endDrag()
+	});
+
+	canvas.addEventListener('touchcancel', event => {
 		endDrag()
 	});
 
@@ -1156,6 +1164,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	}
 	
 	setupScene();
+	scene.showObstacle = false;
 	update();
 	
 </script> 
