@@ -52,6 +52,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	<input type = "checkbox" checked onclick = "scene.compensateDrift = !scene.compensateDrift">Compensate Drift &nbsp;
 	<input type = "checkbox" checked onclick = "toggleColorChange()">Couleurs &nbsp;
+	<input type = "checkbox" onclick = "pixelPerfect = !pixelPerfect; placeCanvas()">480x480 &nbsp;
 	PIC
 	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
 	&nbsp; Secousses
@@ -67,14 +68,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	canvas.width = 480;
 	canvas.height = 480;
 
-	// pixel perfect : 480 x 480 pixels physiques de l'écran, centré et calé sur la grille de pixels
+	// affichage : par défaut le canvas est agrandi à toute la largeur de l'écran ;
+	// en mode pixel perfect il occupe 480 x 480 pixels physiques, calé sur la grille de pixels.
+	// dans les deux cas la simulation est calculée en 480 x 480
+	var pixelPerfect = false;
+
 	function placeCanvas()
 	{
 		var dpr = window.devicePixelRatio || 1;
-		canvas.style.width = (canvas.width / dpr) + "px";
-		canvas.style.height = (canvas.height / dpr) + "px";
-		canvas.style.left = (Math.round((window.innerWidth * dpr - canvas.width) / 2) / dpr) + "px";
-		canvas.style.top = (Math.round((window.innerHeight * dpr - canvas.height) / 2) / dpr) + "px";
+		var size, left, top;
+		if (pixelPerfect) {
+			size = canvas.width / dpr;
+			left = Math.round((window.innerWidth * dpr - canvas.width) / 2) / dpr;
+			top = Math.round((window.innerHeight * dpr - canvas.height) / 2) / dpr;
+		}
+		else {
+			size = Math.min(window.innerWidth, window.innerHeight) - 4;
+			left = (window.innerWidth - size) / 2;
+			top = (window.innerHeight - size) / 2;
+		}
+		canvas.style.width = size + "px";
+		canvas.style.height = size + "px";
+		canvas.style.left = left + "px";
+		canvas.style.top = top + "px";
+		canvas.style.imageRendering = pixelPerfect ? "pixelated" : "auto";
 	}
 	placeCanvas();
 	window.addEventListener('resize', placeCanvas);
