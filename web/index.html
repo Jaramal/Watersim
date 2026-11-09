@@ -50,10 +50,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	
 <body>
 
-	<input type = "checkbox" checked  onclick = "scene.showParticles = !scene.showParticles">Particles &nbsp; 
-	<input type = "checkbox" onclick = "scene.showGrid = !scene.showGrid">Grid &nbsp;
 	<input type = "checkbox" checked onclick = "scene.compensateDrift = !scene.compensateDrift">Compensate Drift &nbsp;
-	<input type = "checkbox" checked onclick = "scene.separateParticles = !scene.separateParticles">Separate Particles &nbsp;
 	PIC
 	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
 	&nbsp; Secousses
@@ -129,7 +126,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			this.p = new Float32Array(this.fNumCells);
 			this.s = new Float32Array(this.fNumCells);
 			this.cellType = new Int32Array(this.fNumCells);
-			this.cellColor = new Float32Array(3 * this.fNumCells);
 
 			// particles
 
@@ -616,57 +612,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			}
 		}
 
-		setSciColor(cellNr, val, minVal, maxVal) 
-		{
-			val = Math.min(Math.max(val, minVal), maxVal- 0.0001);
-			var d = maxVal - minVal;
-			val = d == 0.0 ? 0.5 : (val - minVal) / d;
-			var m = 0.25;
-			var num = Math.floor(val / m);
-			var s = (val - num * m) / m;
-			var r, g, b;
-
-			switch (num) {
-				case 0 : r = 0.0; g = s; b = 1.0; break;
-				case 1 : r = 0.0; g = 1.0; b = 1.0-s; break;
-				case 2 : r = s; g = 1.0; b = 0.0; break;
-				case 3 : r = 1.0; g = 1.0 - s; b = 0.0; break;
-			}
-
-			this.cellColor[3 * cellNr] = r;
-			this.cellColor[3 * cellNr + 1] = g;
-			this.cellColor[3 * cellNr + 2] = b;
-		}
-
-		updateCellColors() 
-		{
-			this.cellColor.fill(0.0);
-	
-			for (var i = 0; i < this.fNumCells; i++) {
-
-				if (this.cellType[i] == SOLID_CELL) {
-					this.cellColor[3*i] = 0.5;
-					this.cellColor[3*i + 1] = 0.5;
-					this.cellColor[3*i + 2] = 0.5;
-				}
-				else if (this.cellType[i] == FLUID_CELL) {
-					var d = this.particleDensity[i];
-					if (this.particleRestDensity > 0.0)
-						d /= this.particleRestDensity;
-					this.setSciColor(i, d, 0.0, 2.0);
-				}
-			}
-		}
-
-		simulate(dt, gravity, flipRatio, numPressureIters, numParticleIters, overRelaxation, compensateDrift, separateParticles, obstacleX, abstacleY, obstacleRadius) 
+		simulate(dt, gravity, flipRatio, numPressureIters, numParticleIters, overRelaxation, compensateDrift, obstacleX, abstacleY, obstacleRadius) 
 		{
 			var numSubSteps = 1;
 			var sdt = dt / numSubSteps;
 
 			for (var step = 0; step < numSubSteps; step++) {
 				this.integrateParticles(sdt, scene.gravityX, gravity);
-				if (separateParticles)
-					this.pushParticlesApart(numParticleIters); 
+				this.pushParticlesApart(numParticleIters); 
 				this.handleParticleCollisions(obstacleX, abstacleY, obstacleRadius)
 				this.transferVelocities(true);
 				this.updateParticleDensity();
@@ -675,8 +628,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			}
 
 			this.updateParticleColors();
-			this.updateCellColors();
-
 		}
 	}
 
@@ -695,7 +646,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		frameNr : 0,
 		overRelaxation : 1.9,
 		compensateDrift : true,
-		separateParticles : true,
 		obstacleX : 0.0,
 		obstacleY : 0.0,
 		obstacleRadius: 0.15,
@@ -703,8 +653,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		showObstacle: true,
 		obstacleVelX: 0.0,
 		obstacleVelY: 0.0,
-		showParticles: true,
-		showGrid: false,
 		fluid: null
 	};
 
@@ -778,10 +726,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		attribute vec3 attrColor;
 		uniform vec2 domainSize;
 		uniform float pointSize;
-		uniform float drawDisk;
 
 		varying vec3 fragColor;
-		varying float fragDrawDisk;
 
 		void main() {
 		vec4 screenTransform = 
@@ -791,23 +737,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		gl_PointSize = pointSize;
 		fragColor = attrColor;
-		fragDrawDisk = drawDisk;
 		}
 	`;
 
 	const pointFragmentShader = `
 		precision mediump float;
 		varying vec3 fragColor;
-		varying float fragDrawDisk;
 
 		void main() {
-			if (fragDrawDisk == 1.0) {
-				float rx = 0.5 - gl_PointCoord.x;
-				float ry = 0.5 - gl_PointCoord.y;
-				float r2 = rx * rx + ry * ry;
-				if (r2 > 0.25)
-					discard;
-			}
+			float rx = 0.5 - gl_PointCoord.x;
+			float ry = 0.5 - gl_PointCoord.y;
+			float r2 = rx * rx + ry * ry;
+			if (r2 > 0.25)
+				discard;
 			gl_FragColor = vec4(fragColor, 1.0);
 		}
 	`;
@@ -869,9 +811,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	var pointVertexBuffer = null;
 	var pointColorBuffer = null;
 
-	var gridVertBuffer = null;
-	var gridColorBuffer = null;
-
 	var diskVertBuffer = null;
 	var diskIdBuffer = null;
 
@@ -889,96 +828,41 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		if (meshShader == null)
 			meshShader = createShader(gl, meshVertexShader, meshFragmentShader);
 
-		// grid
-
-		if (gridVertBuffer == null) {
-
-			var f = scene.fluid;
-			gridVertBuffer = gl.createBuffer();
-			var cellCenters = new Float32Array(2 * f.fNumCells);
-			var p = 0;
-
-			for (var i = 0; i < f.fNumX; i++) {
-				for (var j = 0; j < f.fNumY; j++) {
-					cellCenters[p++] = (i + 0.5) * f.h;
-					cellCenters[p++] = (j + 0.5) * f.h;
-				}
-			}
-			gl.bindBuffer(gl.ARRAY_BUFFER, gridVertBuffer);
-			gl.bufferData(gl.ARRAY_BUFFER, cellCenters, gl.DYNAMIC_DRAW);
-			gl.bindBuffer(gl.ARRAY_BUFFER, null);
-		}	
-
-		if (gridColorBuffer == null)
-			gridColorBuffer = gl.createBuffer();
-
-		if (scene.showGrid) {
-
-			var pointSize = 0.9 * scene.fluid.h / simWidth * canvas.width;
-
-			gl.useProgram(pointShader);
-			gl.uniform2f(gl.getUniformLocation(pointShader, 'domainSize'), simWidth, simHeight);
-			gl.uniform1f(gl.getUniformLocation(pointShader, 'pointSize'), pointSize);
-			gl.uniform1f(gl.getUniformLocation(pointShader, 'drawDisk'), 0.0);
-
-			gl.bindBuffer(gl.ARRAY_BUFFER, gridVertBuffer);
-			var posLoc = gl.getAttribLocation(pointShader, 'attrPosition');
-			gl.enableVertexAttribArray(posLoc);
-			gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-			gl.bindBuffer(gl.ARRAY_BUFFER, gridColorBuffer);
-			gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.cellColor, gl.DYNAMIC_DRAW);
-
-			var colorLoc = gl.getAttribLocation(pointShader, 'attrColor');
-			gl.enableVertexAttribArray(colorLoc);
-			gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
-
-			gl.drawArrays(gl.POINTS, 0, scene.fluid.fNumCells); 
-
-			gl.disableVertexAttribArray(posLoc);
-			gl.disableVertexAttribArray(colorLoc);
-
-			gl.bindBuffer(gl.ARRAY_BUFFER, null);
-		}
-
 		// water
 
-		if (scene.showParticles) {
-			gl.clear(gl.DEPTH_BUFFER_BIT);
+		gl.clear(gl.DEPTH_BUFFER_BIT);
 
-			var pointSize = 2.0 * scene.fluid.particleRadius / simWidth * canvas.width;
+		var pointSize = 2.0 * scene.fluid.particleRadius / simWidth * canvas.width;
 
-			gl.useProgram(pointShader);
-			gl.uniform2f(gl.getUniformLocation(pointShader, 'domainSize'), simWidth, simHeight);
-			gl.uniform1f(gl.getUniformLocation(pointShader, 'pointSize'), pointSize);
-			gl.uniform1f(gl.getUniformLocation(pointShader, 'drawDisk'), 1.0);
+		gl.useProgram(pointShader);
+		gl.uniform2f(gl.getUniformLocation(pointShader, 'domainSize'), simWidth, simHeight);
+		gl.uniform1f(gl.getUniformLocation(pointShader, 'pointSize'), pointSize);
 
-			if (pointVertexBuffer == null)
-				pointVertexBuffer = gl.createBuffer();
-			if (pointColorBuffer == null)
-				pointColorBuffer = gl.createBuffer();
+		if (pointVertexBuffer == null)
+			pointVertexBuffer = gl.createBuffer();
+		if (pointColorBuffer == null)
+			pointColorBuffer = gl.createBuffer();
 
-			gl.bindBuffer(gl.ARRAY_BUFFER, pointVertexBuffer);
-			gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.particlePos, gl.DYNAMIC_DRAW);
+		gl.bindBuffer(gl.ARRAY_BUFFER, pointVertexBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.particlePos, gl.DYNAMIC_DRAW);
 
-			var posLoc = gl.getAttribLocation(pointShader, 'attrPosition');
-			gl.enableVertexAttribArray(posLoc);
-			gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+		var posLoc = gl.getAttribLocation(pointShader, 'attrPosition');
+		gl.enableVertexAttribArray(posLoc);
+		gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
-			gl.bindBuffer(gl.ARRAY_BUFFER, pointColorBuffer);
-			gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.particleColor, gl.DYNAMIC_DRAW);
+		gl.bindBuffer(gl.ARRAY_BUFFER, pointColorBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.particleColor, gl.DYNAMIC_DRAW);
 
-			var colorLoc = gl.getAttribLocation(pointShader, 'attrColor');
-			gl.enableVertexAttribArray(colorLoc);
-			gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
+		var colorLoc = gl.getAttribLocation(pointShader, 'attrColor');
+		gl.enableVertexAttribArray(colorLoc);
+		gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
 
-			gl.drawArrays(gl.POINTS, 0, scene.fluid.numParticles); 
+		gl.drawArrays(gl.POINTS, 0, scene.fluid.numParticles); 
 
-			gl.disableVertexAttribArray(posLoc);
-			gl.disableVertexAttribArray(colorLoc);
+		gl.disableVertexAttribArray(posLoc);
+		gl.disableVertexAttribArray(colorLoc);
 
-			gl.bindBuffer(gl.ARRAY_BUFFER, null);
-		}
+		gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
 		// disk
 
@@ -1272,7 +1156,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		if (!scene.paused)
 			scene.fluid.simulate(
 				scene.dt, scene.gravity, scene.flipRatio, scene.numPressureIters, scene.numParticleIters, 
-				scene.overRelaxation, scene.compensateDrift, scene.separateParticles,
+				scene.overRelaxation, scene.compensateDrift,
 				scene.obstacleX, scene.obstacleY, scene.obstacleRadius, scene.colorFieldNr);
 			scene.frameNr++;
 	}
