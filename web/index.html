@@ -58,6 +58,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	&nbsp; Secousses
 	<input type = "range" min = "0" max = "10" value = "4" class = "slider" onchange="scene.shakeGain = 1.0 * this.value">
 <br>
+	Taille
+	<input id = "sizeSlider" type = "range" min = "0" max = "100" value = "100" class = "slider" style = "width:140px" oninput = "updateTankSize()">
+	<span id="sizeLabel"></span>
+<br>
 	<span id="motionStatus"></span>
 	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none; image-rendering:pixelated"></canvas>
 	
@@ -92,7 +96,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		canvas.style.left = left + "px";
 		canvas.style.top = top + "px";
 		canvas.style.imageRendering = pixelPerfect ? "pixelated" : "auto";
+
+		// largeur physique estimée de l'affichage : 160 pixels CSS par pouce sur un téléphone, 96 sinon
+		var cssPerInch = navigator.maxTouchPoints > 0 ? 160 : 96;
+		displaySize = size / cssPerInch * 0.0254;
+		if (typeof scene != "undefined" && scene)
+			updateTankSize();
 	}
+
+	var displaySize = 0.07;		// mètres
 	placeCanvas();
 	window.addEventListener('resize', placeCanvas);
 
@@ -632,11 +644,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		simulate(dt, gravity, flipRatio, numPressureIters, numParticleIters, overRelaxation, compensateDrift, obstacleX, abstacleY, obstacleRadius) 
 		{
-			var numSubSteps = 1;
+			var numSubSteps = scene.numSubSteps;
 			var sdt = dt / numSubSteps;
 
 			for (var step = 0; step < numSubSteps; step++) {
-				this.integrateParticles(sdt, scene.gravityX, gravity);
+				this.integrateParticles(sdt, scene.gravityX * scene.accScale, gravity);
 				this.pushParticlesApart(numParticleIters); 
 				this.handleParticleCollisions(obstacleX, abstacleY, obstacleRadius)
 				this.transferVelocities(true);
@@ -658,6 +670,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		gravityX : 0.0,
 		shakeGain : 4.0,
 		colorChange : true,
+		tankSize : 3.0,		// largeur réelle simulée, en mètres
+		accScale : 1.0,		// simHeight / tankSize
+		numSubSteps : 1,
+		minPressureIters : 8,
 //		gravity : 0.0,
 		dt : 1.0 / 120.0,
 		flipRatio : 0.9,
@@ -1158,6 +1174,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	canvas.addEventListener('touchend', startMotion);
 	canvas.addEventListener('mouseup', startMotion);
 
+	// taille simulée : le curseur va de la taille réelle de l'affichage (à gauche) à 3 m (à droite).
+	// réduire la taille du réservoir d'un facteur k revient à multiplier les accélérations par k
+	// dans le réservoir de 3 unités ; les vitesses croissent en racine de k, d'où les sous-pas
+
+	function updateTankSize()
+	{
+		var t = document.getElementById("sizeSlider").value / 100.0;
+		var minSize = Math.min(displaySize, simHeight);
+		scene.tankSize = minSize * Math.pow(simHeight / minSize, t);
+		scene.accScale = simHeight / scene.tankSize;
+		scene.numSubSteps = clamp(Math.ceil(Math.sqrt(scene.accScale)), 1, 8);
+
+		var cm = scene.tankSize * 100.0;
+		document.getElementById("sizeLabel").textContent = 
+			(cm >= 10.0 ? cm.toFixed(0) : cm.toFixed(1)) + " cm" + (t == 0.0 ? " (taille réelle estimée)" : "");
+	}
+
 	function toggleColorChange()
 	{
 		scene.colorChange = !scene.colorChange;
@@ -1189,7 +1222,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		applyMotion();
 		if (!scene.paused)
 			scene.fluid.simulate(
-				scene.dt, scene.gravity, scene.flipRatio, scene.numPressureIters, scene.numParticleIters, 
+				scene.dt, scene.gravity * scene.accScale, scene.flipRatio, 
+				Math.max(scene.minPressureIters, Math.ceil(scene.numPressureIters / scene.numSubSteps)),
+				scene.numSubSteps > 1 ? 1 : scene.numParticleIters, 
 				scene.overRelaxation, scene.compensateDrift,
 				scene.obstacleX, scene.obstacleY, scene.obstacleRadius, scene.colorFieldNr);
 			scene.frameNr++;
@@ -1203,6 +1238,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	
 	setupScene();
 	scene.showObstacle = false;
+	updateTankSize();
 	update();
 	
 </script> 
