@@ -54,6 +54,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	<input type = "checkbox" checked onclick = "scene.separateParticles = !scene.separateParticles">Separate Particles &nbsp;
 	PIC
 	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
+	&nbsp; Secousses
+	<input type = "range" min = "0" max = "10" value = "4" class = "slider" onchange="scene.shakeGain = 1.0 * this.value">
 <br>
 	<span id="motionStatus"></span>
 	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none; image-rendering:pixelated"></canvas>
@@ -682,6 +684,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	{
 		gravity : -9.81,
 		gravityX : 0.0,
+		shakeGain : 4.0,
 //		gravity : 0.0,
 		dt : 1.0 / 120.0,
 		flipRatio : 0.9,
@@ -1175,19 +1178,56 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		if (motionEvents++ % 10 == 0)
 			setMotionStatus("actif, x = " + a.x.toFixed(1) + ", y = " + a.y.toFixed(1));
 
-		// passage du repère de l'appareil au repère de l'écran selon la rotation de l'affichage
-		var angle = (screen.orientation && screen.orientation.angle != null) ? screen.orientation.angle : (window.orientation || 0);
-		var ax, ay;
-		switch ((angle + 360) % 360) {
-			case 90 : ax = -a.y; ay = a.x; break;
-			case 180 : ax = -a.x; ay = -a.y; break;
-			case 270 : ax = a.y; ay = -a.x; break;
-			default : ax = a.x; ay = a.y; break;
+		// séparation inclinaison (gravité) / secousses (accélération propre de l'appareil)
+		var lx, ly;
+		var lin = event.acceleration;
+		if (lin != null && lin.x != null && lin.y != null) {
+			lx = lin.x; ly = lin.y;
+		}
+		else {
+			// pas de mesure séparée : la gravité est estimée par un filtre passe-bas
+			if (lowPassX == null) { lowPassX = a.x; lowPassY = a.y; }
+			lowPassX += 0.1 * (a.x - lowPassX);
+			lowPassY += 0.1 * (a.y - lowPassY);
+			lx = a.x - lowPassX; ly = a.y - lowPassY;
 		}
 
-		// accelerationIncludingGravity est l'opposé de la gravité (convention Android / Chrome)
-		scene.gravityX = -ax;
-		scene.gravity = -ay;
+		// dans le repère de l'appareil, le fluide subit la gravité moins l'accélération de l'appareil.
+		// les secousses sont amplifiées car le réservoir simulé (3 m) est bien plus grand que l'écran
+		var fx = -((a.x - lx) + scene.shakeGain * lx);
+		var fy = -((a.y - ly) + scene.shakeGain * ly);
+
+		// passage du repère de l'appareil au repère de l'écran selon la rotation de l'affichage
+		var angle = (screen.orientation && screen.orientation.angle != null) ? screen.orientation.angle : (window.orientation || 0);
+		var sx, sy;
+		switch ((angle + 360) % 360) {
+			case 90 : sx = -fy; sy = fx; break;
+			case 180 : sx = -fx; sy = -fy; break;
+			case 270 : sx = fy; sy = -fx; break;
+			default : sx = fx; sy = fy; break;
+		}
+
+		// cumul des mesures reçues entre deux images, moyenné dans simulate()
+		motionSumX += sx;
+		motionSumY += sy;
+		motionCount++;
+	}
+
+	var lowPassX = null;
+	var lowPassY = null;
+	var motionSumX = 0.0;
+	var motionSumY = 0.0;
+	var motionCount = 0;
+
+	function applyMotion() {
+		if (motionCount == 0)
+			return;
+		var maxAcc = 150.0;
+		scene.gravityX = clamp(motionSumX / motionCount, -maxAcc, maxAcc);
+		scene.gravity = clamp(motionSumY / motionCount, -maxAcc, maxAcc);
+		motionSumX = 0.0;
+		motionSumY = 0.0;
+		motionCount = 0;
 	}
 
 	var motionStarted = false;
@@ -1226,6 +1266,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	function simulate() 
 	{
+		applyMotion();
 		if (!scene.paused)
 			scene.fluid.simulate(
 				scene.dt, scene.gravity, scene.flipRatio, scene.numPressureIters, scene.numParticleIters, 
