@@ -51,6 +51,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 <body>
 
 	<input type = "checkbox" checked onclick = "scene.compensateDrift = !scene.compensateDrift">Compensate Drift &nbsp;
+	<input type = "checkbox" checked onclick = "toggleColorChange()">Couleurs &nbsp;
 	PIC
 	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
 	&nbsp; Secousses
@@ -627,7 +628,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 				this.transferVelocities(false, flipRatio);
 			}
 
-			this.updateParticleColors();
+			if (scene.colorChange)
+				this.updateParticleColors();
 		}
 	}
 
@@ -638,6 +640,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		gravity : -9.81,
 		gravityX : 0.0,
 		shakeGain : 4.0,
+		colorChange : true,
 //		gravity : 0.0,
 		dt : 1.0 / 120.0,
 		flipRatio : 0.9,
@@ -1137,6 +1140,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		startMotion();
 	canvas.addEventListener('touchend', startMotion);
 	canvas.addEventListener('mouseup', startMotion);
+
+	function toggleColorChange()
+	{
+		scene.colorChange = !scene.colorChange;
+		if (!scene.colorChange) {
+			// retour immédiat au bleu uniforme
+			var f = scene.fluid;
+			for (var i = 0; i < f.maxParticles; i++) {
+				f.particleColor[3 * i] = 0.0;
+				f.particleColor[3 * i + 1] = 0.0;
+				f.particleColor[3 * i + 2] = 1.0;
+			}
+		}
+	}
 
 	function toggleStart()
 	{
