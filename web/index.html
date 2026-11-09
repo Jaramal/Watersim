@@ -55,6 +55,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	PIC
 	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
 <br>
+	<span id="motionStatus"></span>
 	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none; image-rendering:pixelated"></canvas>
 	
 <script>
@@ -1151,10 +1152,28 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	// accéléromètre : la gravité de la simulation suit l'inclinaison de l'appareil
 
+	var motionStatus = document.getElementById("motionStatus");
+	var motionEvents = 0;
+
+	function setMotionStatus(text) {
+		motionStatus.textContent = "Accéléromètre : " + text;
+	}
+
+	if (typeof DeviceMotionEvent == "undefined")
+		setMotionStatus("non pris en charge par ce navigateur");
+	else if (!window.isSecureContext)
+		setMotionStatus("indisponible, la page doit être ouverte en HTTPS");
+	else
+		setMotionStatus("en attente de données (aucune reçue)");
+
 	function handleMotion(event) {
 		var a = event.accelerationIncludingGravity;
-		if (a == null || a.x == null || a.y == null)
+		if (a == null || a.x == null || a.y == null) {
+			setMotionStatus("événement reçu sans mesure, pas de capteur accessible");
 			return;
+		}
+		if (motionEvents++ % 10 == 0)
+			setMotionStatus("actif, x = " + a.x.toFixed(1) + ", y = " + a.y.toFixed(1));
 
 		// passage du repère de l'appareil au repère de l'écran selon la rotation de l'affichage
 		var angle = (screen.orientation && screen.orientation.angle != null) ? screen.orientation.angle : (window.orientation || 0);
