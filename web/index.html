@@ -152,9 +152,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			this.numParticles = 0;
 		}
 
-		integrateParticles(dt, gravity) 
+		integrateParticles(dt, gravityX, gravity) 
 		{
 			for (var i = 0; i < this.numParticles; i++) {
+				this.particleVel[2 * i] += dt * gravityX;
 				this.particleVel[2 * i + 1] += dt * gravity;
 				this.particlePos[2 * i] += this.particleVel[2 * i] * dt;
 				this.particlePos[2 * i + 1] += this.particleVel[2 * i + 1] * dt;
@@ -658,7 +659,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			var sdt = dt / numSubSteps;
 
 			for (var step = 0; step < numSubSteps; step++) {
-				this.integrateParticles(sdt, gravity);
+				this.integrateParticles(sdt, scene.gravityX, gravity);
 				if (separateParticles)
 					this.pushParticlesApart(numParticleIters); 
 				this.handleParticleCollisions(obstacleX, abstacleY, obstacleRadius)
@@ -679,6 +680,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	var scene = 
 	{
 		gravity : -9.81,
+		gravityX : 0.0,
 //		gravity : 0.0,
 		dt : 1.0 / 120.0,
 		flipRatio : 0.9,
@@ -1146,6 +1148,50 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			case 'm': scene.paused = false; simulate(); scene.paused = true; break;
 		}
 	});
+
+	// accéléromètre : la gravité de la simulation suit l'inclinaison de l'appareil
+
+	function handleMotion(event) {
+		var a = event.accelerationIncludingGravity;
+		if (a == null || a.x == null || a.y == null)
+			return;
+
+		// passage du repère de l'appareil au repère de l'écran selon la rotation de l'affichage
+		var angle = (screen.orientation && screen.orientation.angle != null) ? screen.orientation.angle : (window.orientation || 0);
+		var ax, ay;
+		switch ((angle + 360) % 360) {
+			case 90 : ax = -a.y; ay = a.x; break;
+			case 180 : ax = -a.x; ay = -a.y; break;
+			case 270 : ax = a.y; ay = -a.x; break;
+			default : ax = a.x; ay = a.y; break;
+		}
+
+		// accelerationIncludingGravity est l'opposé de la gravité (convention Android / Chrome)
+		scene.gravityX = -ax;
+		scene.gravity = -ay;
+	}
+
+	var motionStarted = false;
+
+	function startMotion() {
+		if (motionStarted || typeof DeviceMotionEvent == "undefined")
+			return;
+		motionStarted = true;
+		if (typeof DeviceMotionEvent.requestPermission == "function") {
+			// iOS : l'autorisation doit être demandée à la suite d'un geste de l'utilisateur
+			DeviceMotionEvent.requestPermission().then(state => {
+				if (state == "granted")
+					window.addEventListener('devicemotion', handleMotion);
+			}).catch(() => { motionStarted = false; });
+		}
+		else
+			window.addEventListener('devicemotion', handleMotion);
+	}
+
+	if (typeof DeviceMotionEvent != "undefined" && typeof DeviceMotionEvent.requestPermission != "function")
+		startMotion();
+	canvas.addEventListener('touchend', startMotion);
+	canvas.addEventListener('mouseup', startMotion);
 
 	function toggleStart()
 	{
