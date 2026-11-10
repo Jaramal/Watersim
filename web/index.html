@@ -74,16 +74,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	canvas.width = 480;
 	canvas.height = 480;
 
-	// affichage : le canvas est agrandi à toute la largeur de l'écran,
-	// la simulation est toujours calculée en 480 x 480
+	// affichage : par défaut le canvas est agrandi à toute la largeur de l'écran ;
+	// en mode ESP-Mosaico il occupe 480 x 480 pixels physiques, centré et calé sur la grille de pixels.
+	// dans les deux cas la simulation est calculée en 480 x 480
 
 	function placeCanvas()
 	{
-		var size = Math.min(window.innerWidth, window.innerHeight) - 4;
+		var espMode = typeof scene != "undefined" && scene && scene.espMode;
+		var dpr = window.devicePixelRatio || 1;
+		var size, left, top;
+		if (espMode) {
+			size = canvas.width / dpr;
+			left = Math.round((window.innerWidth * dpr - canvas.width) / 2) / dpr;
+			top = Math.round((window.innerHeight * dpr - canvas.height) / 2) / dpr;
+		}
+		else {
+			size = Math.min(window.innerWidth, window.innerHeight) - 4;
+			left = (window.innerWidth - size) / 2;
+			top = (window.innerHeight - size) / 2;
+		}
 		canvas.style.width = size + "px";
 		canvas.style.height = size + "px";
-		canvas.style.left = ((window.innerWidth - size) / 2) + "px";
-		canvas.style.top = ((window.innerHeight - size) / 2) + "px";
+		canvas.style.left = left + "px";
+		canvas.style.top = top + "px";
+		canvas.style.imageRendering = espMode ? "pixelated" : "auto";
 
 		// largeur physique estimée de l'affichage : 160 pixels CSS par pouce sur un téléphone, 96 sinon
 		var cssPerInch = navigator.maxTouchPoints > 0 ? 160 : 96;
@@ -1207,7 +1221,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		scene.espMode = !scene.espMode;
 		setupScene();
 		scene.showObstacle = false;
-		updateTankSize();
+		placeCanvas();
 	}
 
 	function toggleColorChange()
