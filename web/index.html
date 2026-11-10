@@ -125,6 +125,18 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 						<label class="form-check-label" for="optDrift">Compensate Drift</label>
 					</div>
 				</div>
+				<div class="col-6">
+					<div class="form-check form-switch">
+						<input id="optBoat" class="form-check-input" type="checkbox" role="switch" checked onchange="setBodyVisible(boat, this.checked)">
+						<label class="form-check-label" for="optBoat">Bateau</label>
+					</div>
+				</div>
+				<div class="col-6">
+					<div class="form-check form-switch">
+						<input id="optIceberg" class="form-check-input" type="checkbox" role="switch" checked onchange="setBodyVisible(iceberg, this.checked)">
+						<label class="form-check-label" for="optIceberg">Iceberg</label>
+					</div>
+				</div>
 			</div>
 
 			<label class="form-label d-flex justify-content-between mb-0" for="sizeSlider">
@@ -872,8 +884,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		setObstacle(3.0, 2.0, true);
 
-		// bateau posé à la surface de l'eau
-		setupBoat(0.5 * relWaterWidth * tankWidth, relWaterHeight * tankHeight);
+		// bateau et iceberg posés dans la colonne d'eau de départ, l'iceberg avec sa crête hors de l'eau
+		if (boat == null) {
+			boat = createBoat();
+			iceberg = createIceberg();
+			bodies = [boat, iceberg];
+		}
+		var px = 1.0 / cScale;
+		var waterTop = relWaterHeight * tankHeight;
+		placeBody(boat, 0.45, waterTop + 5.0 * px);
+		placeBody(iceberg, 1.25, waterTop + (icebergTip - 0.5 * icebergSize) * px);
 	}
 
 
@@ -933,53 +953,77 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	var boatBlockX = 5;			// un point d'échantillonnage par bloc de 5 x 3 pixels
 	var boatBlockY = 3;
 	var boatRighting = 35.0;	// lest virtuel : bras de levier du couple de redressement, en pixels
-	var boatDrag = 2.0;			// entraînement par l'eau, par seconde
-	var boatAirDamping = 0.5;	// amortissement hors de l'eau, par seconde
-	var boatRollDamping = 25.0;	// frein de l'eau à la rotation, par seconde
-	var boatSmoothing = 0.2;	// lissage dans le temps de l'eau vue par le bateau, en secondes
-	var boatRestitution = 0.2;	// rebond sur les parois
 
-	var boat = {
-		x : 0.0, y : 0.0, angle : 0.0,		// centre de gravité et orientation
-		vx : 0.0, vy : 0.0, omega : 0.0,
-		mass : 0.0, inertia : 0.0,
-		numPoints : 0,
-		pointX : null, pointY : null,		// points d'échantillonnage, dans le repère du bateau
-		pointArea : null,					// surface (volume déplacé) de chaque point, en pixels
-		pointDrag : null,					// prise de l'eau sur chaque point
-		centerX : 0.0, centerY : 0.0,		// centre du sprite dans le repère du bateau
-		area : 0.0, drag : 0.0, width : 0.0, height : 0.0,
-		density : null, u : null, v : null	// eau vue par le bateau : densité et vitesses de la grille, lissées dans le temps
-	};
+	// iceberg -------------------------------------------------------
 
-	function setupBoat(x, y)
+	var icebergSize = 100;				// pixels, en largeur et en hauteur
+	var icebergTip = 10;				// hauteur qui dépasse de l'eau, en pixels
+	var icebergBlock = 5;				// un point d'échantillonnage par bloc de 5 x 5 pixels
+	var icebergBallastTop = 0.5;		// poids relatif de la glace en haut et en bas : lesté par le bas
+	var icebergBallastBottom = 1.5;
+	var icebergFloat = 1.0;				// masse rapportée à la surface immergée voulue : règle la hauteur émergée
+	var icebergRighting = 15.0;			// lest virtuel, en pixels
+	var icebergGhost = 0.35;			// visibilité de la partie immergée à travers l'eau
+
+	var icebergColorsAbove = [[214, 246, 250], [126, 230, 225], [96, 212, 204], [170, 238, 240]];
+	var icebergColorsBelow = [[26, 143, 181], [79, 168, 216], [61, 151, 189], [107, 184, 232], [42, 125, 170]];
+
+	// corps flottants : réglages communs -------------------------------
+
+	var bodyDrag = 2.0;			// entraînement par l'eau, par seconde
+	var bodyAirDamping = 0.5;	// amortissement hors de l'eau, par seconde
+	var bodyRollDamping = 25.0;	// frein de l'eau à la rotation, par seconde
+	var bodySmoothing = 0.2;	// lissage dans le temps de l'eau vue par les corps, en secondes
+	var bodyRestitution = 0.2;	// rebond sur les parois et entre corps
+	var bodySubMin = 0.2;		// densité relative de l'eau à partir de laquelle un point commence à être immergé
+	var bodySubFull = 0.5;		// densité relative à partir de laquelle il l'est entièrement
+
+	var boat = null;
+	var iceberg = null;
+	var bodies = [];
+
+	// eau vue par les corps : densité et vitesses de la grille, lissées dans le temps
+	var water = { fluid : null, density : null, u : null, v : null };
+
+	// construit un corps rigide à partir d'une image : pixels RVBA (première ligne en haut, alpha nul = vide),
+	// densité et prise de l'eau de chaque pixel
+
+	function createBody(width, height, pixels, densities, drags, blockX, blockY, righting)
 	{
-		var b = boat;
 		var px = 1.0 / cScale;		// taille d'un pixel dans la simulation
-		var xs = [], ys = [], areas = [], masses = [], drags = [];
+		var b = {
+			width : width, height : height, pixels : pixels, texture : null,
+			righting : righting, visible : true,
+			x : 0.0, y : 0.0, angle : 0.0,		// centre de gravité et orientation
+			vx : 0.0, vy : 0.0, omega : 0.0
+		};
 
-		for (var r0 = 0; r0 < boatHeight; r0 += boatBlockY) {
-			for (var c0 = 0; c0 < boatWidth; c0 += boatBlockX) {
+		// points d'échantillonnage : un par bloc, pour la flottaison
+
+		var xs = [], ys = [], areas = [], masses = [], pdrags = [];
+
+		for (var r0 = 0; r0 < height; r0 += blockY) {
+			for (var c0 = 0; c0 < width; c0 += blockX) {
 				var area = 0.0, mass = 0.0, drag = 0.0, sx = 0.0, sy = 0.0;
-				for (var r = r0; r < r0 + boatBlockY; r++) {
-					for (var c = c0; c < c0 + boatBlockX; c++) {
-						var ch = boatSprite[r].charAt(c);
-						if (ch == '.')
+				for (var r = r0; r < Math.min(r0 + blockY, height); r++) {
+					for (var c = c0; c < Math.min(c0 + blockX, width); c++) {
+						var p = r * width + c;
+						if (pixels[4 * p + 3] == 0)
 							continue;
 						area += 1.0;
-						mass += boatDensities[ch];
-						drag += boatDragFactors[ch];
-						sx += (c + 0.5 - 0.5 * boatWidth) * px;
-						sy += (0.5 * boatHeight - r - 0.5) * px;
+						mass += densities[p];
+						drag += drags[p];
+						sx += (c + 0.5 - 0.5 * width) * px;
+						sy += (0.5 * height - r - 0.5) * px;
 					}
 				}
 				if (area > 0.0) {
-					xs.push(sx / area); ys.push(sy / area); areas.push(area); masses.push(mass); drags.push(drag);
+					xs.push(sx / area); ys.push(sy / area); areas.push(area); masses.push(mass); pdrags.push(drag);
 				}
 			}
 		}
 
-		// centre de gravité, puis passage dans le repère du bateau
+		// centre de gravité, puis passage dans le repère du corps
 
 		var n = xs.length;
 		var mass = 0.0, cx = 0.0, cy = 0.0;
@@ -991,8 +1035,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		b.numPoints = n;
 		b.pointX = new Float32Array(n);
 		b.pointY = new Float32Array(n);
-		b.pointArea = new Float32Array(n);
-		b.pointDrag = new Float32Array(n);
+		b.pointArea = new Float32Array(n);		// surface (volume déplacé) de chaque point, en pixels
+		b.pointDrag = new Float32Array(n);		// prise de l'eau sur chaque point
 		b.mass = mass;
 		b.inertia = 0.0;
 		b.area = 0.0;
@@ -1002,19 +1046,197 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			b.pointY[i] = ys[i] - cy;
 			b.pointArea[i] = areas[i];
 			b.area += areas[i];
-			b.pointDrag[i] = drags[i];
-			b.drag += drags[i];
+			b.pointDrag[i] = pdrags[i];
+			b.drag += pdrags[i];
 			b.inertia += masses[i] * (b.pointX[i] * b.pointX[i] + b.pointY[i] * b.pointY[i]);
 		}
-		b.centerX = -cx;
+		b.centerX = -cx;		// centre de l'image dans le repère du corps
 		b.centerY = -cy;
-		b.width = boatWidth * px;
-		b.height = boatHeight * px;
 
-		b.x = x; b.y = y; b.angle = 0.0;
+		// profondeur de chaque pixel dans la forme (distance au bord, en pixels), pour les collisions
+
+		var depth = new Float32Array(width * height);
+		var diag = Math.SQRT2;
+		for (var p = 0; p < width * height; p++)
+			depth[p] = pixels[4 * p + 3] == 0 ? 0.0 : 1.0e6;
+
+		function at(c, r) { return c < 0 || c >= width || r < 0 || r >= height ? 0.0 : depth[r * width + c]; }
+
+		for (var r = 0; r < height; r++) {
+			for (var c = 0; c < width; c++) {
+				var p = r * width + c;
+				if (depth[p] > 0.0)
+					depth[p] = Math.min(depth[p], at(c - 1, r) + 1.0, at(c, r - 1) + 1.0, at(c - 1, r - 1) + diag, at(c + 1, r - 1) + diag);
+			}
+		}
+		for (var r = height - 1; r >= 0; r--) {
+			for (var c = width - 1; c >= 0; c--) {
+				var p = r * width + c;
+				if (depth[p] > 0.0)
+					depth[p] = Math.min(depth[p], at(c + 1, r) + 1.0, at(c, r + 1) + 1.0, at(c + 1, r + 1) + diag, at(c - 1, r + 1) + diag);
+			}
+		}
+		b.depth = depth;
+
+		// points de contour : un pixel du bord sur deux, pour les parois et les collisions
+
+		xs = []; ys = [];
+		b.radius = 0.0;
+		for (var r = 0; r < height; r++) {
+			for (var c = 0; c < width; c++) {
+				if (depth[r * width + c] != 1.0 || (c + r) % 2 != 0)
+					continue;
+				var x = (c + 0.5 - 0.5 * width) * px - cx;
+				var y = (0.5 * height - r - 0.5) * px - cy;
+				xs.push(x); ys.push(y);
+				b.radius = Math.max(b.radius, Math.sqrt(x * x + y * y));
+			}
+		}
+		b.numContour = xs.length;
+		b.contourX = new Float32Array(xs);
+		b.contourY = new Float32Array(ys);
+
+		return b;
+	}
+
+	// pose un corps immobile et droit, centre de l'image en (x, y)
+
+	function placeBody(b, x, y)
+	{
+		b.x = x - b.centerX; b.y = y - b.centerY; b.angle = 0.0;
 		b.vx = 0.0; b.vy = 0.0; b.omega = 0.0;
+	}
 
-		b.density = null;
+	function createBoat()
+	{
+		var n = boatWidth * boatHeight;
+		var pixels = new Uint8Array(4 * n);
+		var densities = new Float32Array(n);
+		var drags = new Float32Array(n);
+
+		for (var r = 0; r < boatHeight; r++) {
+			for (var c = 0; c < boatWidth; c++) {
+				var ch = boatSprite[r].charAt(c);
+				if (ch == '.')
+					continue;
+				var p = r * boatWidth + c;
+				var color = boatColors[ch];
+				pixels[4 * p] = color[0]; pixels[4 * p + 1] = color[1]; pixels[4 * p + 2] = color[2]; pixels[4 * p + 3] = 255;
+				densities[p] = boatDensities[ch];
+				drags[p] = boatDragFactors[ch];
+			}
+		}
+		return createBody(boatWidth, boatHeight, pixels, densities, drags, boatBlockX, boatBlockY, boatRighting);
+	}
+
+	// iceberg de forme aléatoire : une petite crête en dents de scie au-dessus de la ligne de flottaison,
+	// un grand corps en dessous qui se resserre en marches jusqu'à une pointe, découpé en facettes de couleur
+
+	function createIceberg()
+	{
+		var n = icebergSize;
+		var tip = icebergTip;
+
+		function rand(a, b) { return a + (b - a) * Math.random(); }
+
+		// interpolation linéaire dans une liste de points [t, valeur] triée par t
+		function interp(points, t) {
+			if (t <= points[0][0])
+				return points[0][1];
+			for (var i = 1; i < points.length; i++) {
+				if (t <= points[i][0]) {
+					var p = points[i - 1], q = points[i];
+					return q[0] <= p[0] ? q[1] : p[1] + (q[1] - p[1]) * (t - p[0]) / (q[0] - p[0]);
+				}
+			}
+			return points[points.length - 1][1];
+		}
+
+		// flanc immergé : s'élargit jusqu'au bord de l'image juste sous la surface, puis descend en marches vers la pointe
+		var tipX = rand(0.38, 0.62) * n;
+
+		function flank(edge, waterX) {
+			var y = tip + rand(5.0, 14.0);
+			var x = edge;
+			var points = [[tip, waterX], [y, x]];
+			var steps = 3 + Math.floor(rand(0.0, 3.0));
+			for (var k = 1; k <= steps; k++) {
+				var t = k / (steps + 1);
+				var target = edge + (tipX - edge) * Math.pow(t, rand(0.8, 1.5));
+				var yk = Math.min(Math.max(tip + 14.0 + (n - 15.0 - tip) * (t + rand(-0.05, 0.05)), y + 4.0), n - 5.0);
+				points.push([yk, x + (target - x) * rand(0.0, 0.3)]);		// pan presque vertical
+				y = Math.min(yk + rand(2.0, 7.0), n - 3.0);
+				x = target;
+				points.push([y, x]);										// marche vers l'intérieur
+			}
+			points.push([n - 1.0, tipX]);
+			return points;
+		}
+
+		var left = flank(0.0, rand(0.12, 0.24) * n);
+		var right = flank(n, rand(0.76, 0.88) * n);
+
+		// crête émergée : quelques pics, dont un atteint le haut de l'image
+		var x0 = left[0][1];
+		var x1 = right[0][1];
+		var peaks = 3 + Math.floor(rand(0.0, 3.0));
+		var highest = Math.floor(rand(0.0, peaks));
+		var ridge = [[x0, 0.0]];
+		for (var k = 0; k < peaks; k++) {
+			ridge.push([x0 + (x1 - x0) * (k + rand(0.3, 0.7)) / peaks, k == highest ? tip : rand(0.4, 0.95) * tip]);
+			if (k < peaks - 1)
+				ridge.push([x0 + (x1 - x0) * (k + 1.0 + rand(-0.12, 0.12)) / peaks, rand(0.1, 0.4) * tip]);
+		}
+		ridge.push([x1, 0.0]);
+
+		// facettes : chaque pixel prend la couleur du germe le plus proche (distance étirée verticalement)
+		var seeds = [];
+		for (var k = 0; k < 10; k++)
+			seeds.push([rand(0.1, 0.9) * n, rand(0.0, 1.0) * n]);
+
+		var pixels = new Uint8Array(4 * n * n);
+		var densities = new Float32Array(n * n);
+		var drags = new Float32Array(n * n);
+		var weight = 0.0;
+		var submerged = 0;
+
+		for (var r = 0; r < n; r++) {
+			for (var c = 0; c < n; c++) {
+				var x = c + 0.5;
+				var y = r + 0.5;
+				var inside = r < tip ?
+					x >= x0 && x <= x1 && tip - y <= interp(ridge, x) :
+					x >= interp(left, y) - 0.5 && x <= interp(right, y) + 0.5;
+				if (!inside)
+					continue;
+
+				var best = 0, bestDist = 1.0e9;
+				for (var k = 0; k < seeds.length; k++) {
+					var dx = x - seeds[k][0];
+					var dy = 0.5 * (y - seeds[k][1]);
+					if (dx * dx + dy * dy < bestDist) {
+						bestDist = dx * dx + dy * dy; best = k;
+					}
+				}
+				var colors = r < tip ? icebergColorsAbove : icebergColorsBelow;
+				var color = colors[best % colors.length];
+
+				var p = r * n + c;
+				pixels[4 * p] = color[0]; pixels[4 * p + 1] = color[1]; pixels[4 * p + 2] = color[2]; pixels[4 * p + 3] = 255;
+				densities[p] = icebergBallastTop + (icebergBallastBottom - icebergBallastTop) * r / (n - 1);
+				drags[p] = 1.0;
+				weight += densities[p];
+				if (r >= tip)
+					submerged++;
+			}
+		}
+
+		// la masse totale vaut la surface à immerger : l'iceberg flotte avec sa crête hors de l'eau
+		var scale = icebergFloat * submerged / weight;
+		for (var p = 0; p < n * n; p++)
+			densities[p] *= scale;
+
+		return createBody(n, n, pixels, densities, drags, icebergBlock, icebergBlock, icebergRighting);
 	}
 
 	// interpolation bilinéaire d'un champ de la grille, (dx, dy) = position de l'échantillon dans la cellule
@@ -1043,137 +1265,261 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			tx * ty * field[x1 * n + y1] + sx * ty * field[x0 * n + y1];
 	}
 
-	// le bateau subit l'eau (poussée d'Archimède, entraînement par le courant) mais n'agit pas sur elle
+	// un sous-pas pour un corps : il subit l'eau (poussée d'Archimède, entraînement par le courant) mais n'agit pas sur elle
 
-	function simulateBoat(dt, gravityX, gravityY)
+	function stepBody(b, f, sdt, gravityX, gravityY, dragRate, rollRate, airFactor)
 	{
-		var b = boat;
-		var f = scene.fluid;
 		var d0 = f.particleRestDensity;
-		if (d0 <= 0.0)
+		var h2 = 0.5 * f.h;
+
+		var c = Math.cos(b.angle);
+		var s = Math.sin(b.angle);
+
+		var fx = b.mass * gravityX;
+		var fy = b.mass * gravityY;
+		var torque = 0.0;
+		var subArea = 0.0;
+
+		for (var i = 0; i < b.numPoints; i++) {
+			var rx = c * b.pointX[i] - s * b.pointY[i];
+			var ry = s * b.pointX[i] + c * b.pointY[i];
+			var x = b.x + rx;
+			var y = b.y + ry;
+
+			// part immergée du point, d'après la densité de particules : entière dès la moitié de la densité au repos,
+			// pour qu'un corps à peine plus léger que l'eau (l'iceberg) ne coule pas sur une simple irrégularité
+			var sub = clamp((sampleGrid(f, water.density, x, y, h2, h2) / d0 - bodySubMin) / (bodySubFull - bodySubMin), 0.0, 1.0);
+			if (sub == 0.0)
+				continue;
+
+			var a = b.pointArea[i] * sub;
+			var d = b.pointDrag[i] * sub * dragRate;
+			subArea += a;
+			var vx = b.vx - b.omega * ry;
+			var vy = b.vy + b.omega * rx;
+
+			// poussée d'Archimède (opposée à la gravité) et entraînement par l'eau
+			var pfx = -a * gravityX + d * (sampleGrid(f, water.u, x, y, 0.0, h2) - vx);
+			var pfy = -a * gravityY + d * (sampleGrid(f, water.v, x, y, h2, 0.0) - vy);
+
+			fx += pfx;
+			fy += pfy;
+			torque += rx * pfy - ry * pfx;
+		}
+
+		// lest virtuel : dans l'eau, un couple ramène le haut du corps vers le haut (à l'opposé de la gravité).
+		// sans lui une coque large resterait stable à l'envers
+		var wet = Math.min(subArea / b.mass, 1.0);
+		torque += b.righting / cScale * b.mass * wet * (gravityX * c + gravityY * s);
+
+		b.vx = (b.vx + sdt * fx / b.mass) * airFactor;
+		b.vy = (b.vy + sdt * fy / b.mass) * airFactor;
+		b.omega = (b.omega + sdt * torque / b.inertia) * airFactor;
+		b.omega *= Math.exp(-rollRate * wet * sdt);
+
+		b.x += sdt * b.vx;
+		b.y += sdt * b.vy;
+		b.angle += sdt * b.omega;
+
+		// parois : pour chacune, le point de contour le plus enfoncé repousse le corps et le fait rebondir
+
+		var minX = f.h, maxX = (f.fNumX - 1) * f.h;
+		var minY = f.h, maxY = (f.fNumY - 1) * f.h;
+
+		c = Math.cos(b.angle);
+		s = Math.sin(b.angle);
+
+		for (var wall = 0; wall < 4; wall++) {
+			var nx = wall == 0 ? 1.0 : wall == 1 ? -1.0 : 0.0;
+			var ny = wall == 2 ? 1.0 : wall == 3 ? -1.0 : 0.0;
+			var limit = wall == 0 ? minX - b.x : wall == 1 ? b.x - maxX : wall == 2 ? minY - b.y : b.y - maxY;
+			if (limit + b.radius <= 0.0)
+				continue;
+
+			var maxDepth = 0.0, crx = 0.0, cry = 0.0;
+			for (var i = 0; i < b.numContour; i++) {
+				var rx = c * b.contourX[i] - s * b.contourY[i];
+				var ry = s * b.contourX[i] + c * b.contourY[i];
+				var depth = limit - (nx * rx + ny * ry);
+				if (depth > maxDepth) {
+					maxDepth = depth; crx = rx; cry = ry;
+				}
+			}
+			if (maxDepth == 0.0)
+				continue;
+
+			b.x += nx * maxDepth;
+			b.y += ny * maxDepth;
+
+			var vn = (b.vx - b.omega * cry) * nx + (b.vy + b.omega * crx) * ny;
+			if (vn < 0.0) {
+				var rn = crx * ny - cry * nx;
+				var j = -(1.0 + bodyRestitution) * vn / (1.0 / b.mass + rn * rn / b.inertia);
+				b.vx += j * nx / b.mass;
+				b.vy += j * ny / b.mass;
+				b.omega += j * rn / b.inertia;
+			}
+		}
+	}
+
+	// collision entre deux corps : chacun teste ses points de contour dans la forme de l'autre
+
+	var contact = { depth : 0.0, x : 0.0, y : 0.0, nx : 0.0, ny : 0.0 };
+
+	// cherche le point de contour de a le plus enfoncé dans b ; sign oriente la normale de b vers a
+	function findContact(a, b, sign)
+	{
+		var ca = Math.cos(a.angle), sa = Math.sin(a.angle);
+		var cb = Math.cos(b.angle), sb = Math.sin(b.angle);
+		var w = b.width, h = b.height;
+
+		for (var i = 0; i < a.numContour; i++) {
+			var x = a.x + ca * a.contourX[i] - sa * a.contourY[i];
+			var y = a.y + sa * a.contourX[i] + ca * a.contourY[i];
+
+			// position dans l'image de b
+			var dx = x - b.x;
+			var dy = y - b.y;
+			var lx = cb * dx + sb * dy;
+			var ly = -sb * dx + cb * dy;
+			var col = Math.floor((lx - b.centerX) * cScale + 0.5 * w);
+			var row = Math.floor(0.5 * h - (ly - b.centerY) * cScale);
+			if (col < 0 || col >= w || row < 0 || row >= h)
+				continue;
+
+			var d = b.depth[row * w + col];
+			if (d <= contact.depth)
+				continue;
+
+			// la normale sort de b : elle descend la pente de la profondeur
+			var gx = (col + 1 < w ? b.depth[row * w + col + 1] : 0.0) - (col > 0 ? b.depth[row * w + col - 1] : 0.0);
+			var gy = (row + 1 < h ? b.depth[(row + 1) * w + col] : 0.0) - (row > 0 ? b.depth[(row - 1) * w + col] : 0.0);
+			var nlx = -gx;
+			var nly = gy;
+			var len = Math.sqrt(nlx * nlx + nly * nly);
+			if (len == 0.0) {
+				nlx = lx; nly = ly;
+				len = Math.sqrt(nlx * nlx + nly * nly);
+				if (len == 0.0)
+					continue;
+			}
+			contact.depth = d;
+			contact.x = x;
+			contact.y = y;
+			contact.nx = sign * (cb * nlx - sb * nly) / len;
+			contact.ny = sign * (sb * nlx + cb * nly) / len;
+		}
+	}
+
+	function collideBodies(a, b)
+	{
+		var dx = a.x - b.x;
+		var dy = a.y - b.y;
+		var reach = a.radius + b.radius;
+		if (dx * dx + dy * dy > reach * reach)
 			return;
 
-		var h = f.h;
-		var h2 = 0.5 * h;
-		var margin = 2.0 / cScale;		// les points sont au centre des blocs, pas au bord du dessin
-		var minX = h + margin, maxX = (f.fNumX - 1) * h - margin;
-		var minY = h + margin, maxY = (f.fNumY - 1) * h - margin;
+		contact.depth = 0.0;
+		findContact(a, b, 1.0);
+		findContact(b, a, -1.0);
+		if (contact.depth == 0.0)
+			return;
+
+		// séparation, répartie selon les masses : le plus léger recule le plus
+		var nx = contact.nx;
+		var ny = contact.ny;
+		var wa = 1.0 / a.mass;
+		var wb = 1.0 / b.mass;
+		var depth = contact.depth / cScale;
+		a.x += nx * depth * wa / (wa + wb);
+		a.y += ny * depth * wa / (wa + wb);
+		b.x -= nx * depth * wb / (wa + wb);
+		b.y -= ny * depth * wb / (wa + wb);
+
+		// rebond au point de contact
+		var rax = contact.x - a.x, ray = contact.y - a.y;
+		var rbx = contact.x - b.x, rby = contact.y - b.y;
+		var vn = ((a.vx - a.omega * ray) - (b.vx - b.omega * rby)) * nx + ((a.vy + a.omega * rax) - (b.vy + b.omega * rbx)) * ny;
+		if (vn >= 0.0)
+			return;
+
+		var ran = rax * ny - ray * nx;
+		var rbn = rbx * ny - rby * nx;
+		var j = -(1.0 + bodyRestitution) * vn / (wa + wb + ran * ran / a.inertia + rbn * rbn / b.inertia);
+		a.vx += j * nx * wa;
+		a.vy += j * ny * wa;
+		a.omega += j * ran / a.inertia;
+		b.vx -= j * nx * wb;
+		b.vy -= j * ny * wb;
+		b.omega -= j * rbn / b.inertia;
+	}
+
+	function simulateBodies(dt, gravityX, gravityY)
+	{
+		var f = scene.fluid;
+		if (f.particleRestDensity <= 0.0)
+			return;
+
 		var timeScale = Math.sqrt(scene.accScale);
 
-		// la grille est bruitée d'une image à l'autre : le bateau en voit une version lissée dans le temps
-		if (b.density == null) {
-			b.density = new Float32Array(f.particleDensity);
-			b.u = new Float32Array(f.u);
-			b.v = new Float32Array(f.v);
+		// la grille est bruitée d'une image à l'autre : les corps en voient une version lissée dans le temps
+		if (water.fluid != f) {
+			water.fluid = f;
+			water.density = new Float32Array(f.particleDensity);
+			water.u = new Float32Array(f.u);
+			water.v = new Float32Array(f.v);
 		}
 		else {
-			var blend = 1.0 - Math.exp(-dt * timeScale / boatSmoothing);
+			var blend = 1.0 - Math.exp(-dt * timeScale / bodySmoothing);
 			for (var i = 0; i < f.fNumCells; i++) {
-				b.density[i] += blend * (f.particleDensity[i] - b.density[i]);
-				b.u[i] += blend * (f.u[i] - b.u[i]);
-				b.v[i] += blend * (f.v[i] - b.v[i]);
+				water.density[i] += blend * (f.particleDensity[i] - water.density[i]);
+				water.u[i] += blend * (f.u[i] - water.u[i]);
+				water.v[i] += blend * (f.v[i] - water.v[i]);
 			}
 		}
 
-		// l'eau entraîne le bateau d'autant plus vite que la taille simulée est petite
-		var dragRate = boatDrag * timeScale;
-		var rollRate = boatRollDamping * timeScale;
+		// l'eau entraîne les corps d'autant plus vite que la taille simulée est petite
+		var dragRate = bodyDrag * timeScale;
+		var rollRate = bodyRollDamping * timeScale;
 
-		// sous-pas : assez pour suivre l'oscillation de flottaison et l'entraînement
+		// sous-pas : assez pour suivre l'oscillation de flottaison, l'entraînement et le redressement de chaque corps
 		var g = Math.sqrt(gravityX * gravityX + gravityY * gravityY);
-		var righting = boatRighting / cScale * b.mass;
-		var rate = Math.max(Math.sqrt(g * b.width * cScale * cScale / b.mass), dragRate * b.drag / b.mass, rollRate,
-			Math.sqrt(righting * g / b.inertia));
+		var rate = 0.0;
+		var active = [];
+		for (var i = 0; i < bodies.length; i++) {
+			var b = bodies[i];
+			if (!b.visible)
+				continue;
+			active.push(b);
+			rate = Math.max(rate, Math.sqrt(g * b.width * cScale / b.mass), dragRate * b.drag / b.mass, rollRate,
+				Math.sqrt(b.righting / cScale * b.mass * g / b.inertia));
+		}
+		if (active.length == 0)
+			return;
+
 		var numSteps = clamp(Math.ceil(dt * rate / 0.4), 1, 40);
 		var sdt = dt / numSteps;
-		var airFactor = Math.exp(-boatAirDamping * timeScale * sdt);
+		var airFactor = Math.exp(-bodyAirDamping * timeScale * sdt);
 
 		for (var step = 0; step < numSteps; step++) {
-
-			var c = Math.cos(b.angle);
-			var s = Math.sin(b.angle);
-
-			var fx = b.mass * gravityX;
-			var fy = b.mass * gravityY;
-			var torque = 0.0;
-			var subArea = 0.0;
-
-			for (var i = 0; i < b.numPoints; i++) {
-				var rx = c * b.pointX[i] - s * b.pointY[i];
-				var ry = s * b.pointX[i] + c * b.pointY[i];
-				var x = b.x + rx;
-				var y = b.y + ry;
-
-				// part immergée du point, d'après la densité de particules
-				var sub = clamp((sampleGrid(f, b.density, x, y, h2, h2) / d0 - 0.25) / 0.5, 0.0, 1.0);
-				if (sub == 0.0)
-					continue;
-
-				var a = b.pointArea[i] * sub;
-				var d = b.pointDrag[i] * sub * dragRate;
-				subArea += a;
-				var vx = b.vx - b.omega * ry;
-				var vy = b.vy + b.omega * rx;
-
-				// poussée d'Archimède (opposée à la gravité) et entraînement par l'eau
-				var pfx = -a * gravityX + d * (sampleGrid(f, b.u, x, y, 0.0, h2) - vx);
-				var pfy = -a * gravityY + d * (sampleGrid(f, b.v, x, y, h2, 0.0) - vy);
-
-				fx += pfx;
-				fy += pfy;
-				torque += rx * pfy - ry * pfx;
-			}
-
-			// lest virtuel : dans l'eau, un couple ramène le pont vers le haut (à l'opposé de la gravité).
-			// sans lui une coque aussi large resterait stable à l'envers
-			torque += righting * Math.min(subArea / b.mass, 1.0) * (gravityX * c + gravityY * s);
-
-			b.vx = (b.vx + sdt * fx / b.mass) * airFactor;
-			b.vy = (b.vy + sdt * fy / b.mass) * airFactor;
-			b.omega = (b.omega + sdt * torque / b.inertia) * airFactor;
-			b.omega *= Math.exp(-rollRate * Math.min(subArea / b.mass, 1.0) * sdt);
-
-			b.x += sdt * b.vx;
-			b.y += sdt * b.vy;
-			b.angle += sdt * b.omega;
-
-			// parois : pour chacune, le point le plus enfoncé repousse le bateau et le fait rebondir
-
-			c = Math.cos(b.angle);
-			s = Math.sin(b.angle);
-
-			for (var wall = 0; wall < 4; wall++) {
-				var nx = wall == 0 ? 1.0 : wall == 1 ? -1.0 : 0.0;
-				var ny = wall == 2 ? 1.0 : wall == 3 ? -1.0 : 0.0;
-				var maxDepth = 0.0, crx = 0.0, cry = 0.0;
-
-				for (var i = 0; i < b.numPoints; i++) {
-					var rx = c * b.pointX[i] - s * b.pointY[i];
-					var ry = s * b.pointX[i] + c * b.pointY[i];
-					var depth = wall == 0 ? minX - (b.x + rx) : wall == 1 ? (b.x + rx) - maxX :
-						wall == 2 ? minY - (b.y + ry) : (b.y + ry) - maxY;
-					if (depth > maxDepth) {
-						maxDepth = depth; crx = rx; cry = ry;
-					}
-				}
-				if (maxDepth == 0.0)
-					continue;
-
-				b.x += nx * maxDepth;
-				b.y += ny * maxDepth;
-
-				var vn = (b.vx - b.omega * cry) * nx + (b.vy + b.omega * crx) * ny;
-				if (vn < 0.0) {
-					var rn = crx * ny - cry * nx;
-					var j = -(1.0 + boatRestitution) * vn / (1.0 / b.mass + rn * rn / b.inertia);
-					b.vx += j * nx / b.mass;
-					b.vy += j * ny / b.mass;
-					b.omega += j * rn / b.inertia;
-				}
+			for (var i = 0; i < active.length; i++)
+				stepBody(active[i], f, sdt, gravityX, gravityY, dragRate, rollRate, airFactor);
+			for (var i = 0; i < active.length; i++) {
+				for (var j = i + 1; j < active.length; j++)
+					collideBodies(active[i], active[j]);
 			}
 		}
 
-		b.angle = Math.atan2(Math.sin(b.angle), Math.cos(b.angle));
+		for (var i = 0; i < active.length; i++)
+			active[i].angle = Math.atan2(Math.sin(active[i].angle), Math.cos(active[i].angle));
+	}
+
+	// affiche ou masque un corps ; masqué, il n'est plus simulé et ne gêne plus l'autre
+
+	function setBodyVisible(b, visible)
+	{
+		b.visible = visible;
+		b.vx = 0.0; b.vy = 0.0; b.omega = 0.0;
 	}
 
 	// draw -------------------------------------------------------
@@ -1264,13 +1610,14 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	const spriteFragmentShader = `
 		precision mediump float;
 		uniform sampler2D sprite;
+		uniform float alpha;
 		varying vec2 fragCoord;
 
 		void main() {
 			vec4 color = texture2D(sprite, fragCoord);
 			if (color.a < 0.5)
 				discard;
-			gl_FragColor = vec4(color.rgb, 1.0);
+			gl_FragColor = vec4(color.rgb, alpha);
 		}
 	`;
 
@@ -1300,8 +1647,67 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	var meshShader = null;
 	var spriteShader = null;
 
-	var boatVertBuffer = null;
-	var boatTexture = null;
+	var spriteVertBuffer = null;
+
+	// dessine l'image d'un corps, tournée et placée ; alpha < 1 la mélange à ce qui est déjà dessiné
+
+	function drawBody(b, alpha)
+	{
+		if (spriteShader == null)
+			spriteShader = createShader(gl, spriteVertexShader, spriteFragmentShader);
+
+		if (spriteVertBuffer == null) {
+			spriteVertBuffer = gl.createBuffer();
+			gl.bindBuffer(gl.ARRAY_BUFFER, spriteVertBuffer);
+			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]), gl.STATIC_DRAW);
+			gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		}
+
+		if (b.texture == null) {
+			// texture : première ligne en bas
+			var flipped = new Uint8Array(4 * b.width * b.height);
+			for (var r = 0; r < b.height; r++)
+				flipped.set(b.pixels.subarray(4 * b.width * (b.height - 1 - r), 4 * b.width * (b.height - r)), 4 * b.width * r);
+			b.texture = gl.createTexture();
+			gl.bindTexture(gl.TEXTURE_2D, b.texture);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, b.width, b.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, flipped);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		}
+
+		var c = Math.cos(b.angle);
+		var s = Math.sin(b.angle);
+
+		if (alpha < 1.0) {
+			gl.enable(gl.BLEND);
+			gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+		}
+
+		gl.useProgram(spriteShader);
+		gl.uniform2f(gl.getUniformLocation(spriteShader, 'domainSize'), simWidth, simHeight);
+		gl.uniform2f(gl.getUniformLocation(spriteShader, 'translation'), 
+			b.x + c * b.centerX - s * b.centerY, b.y + s * b.centerX + c * b.centerY);
+		gl.uniform2f(gl.getUniformLocation(spriteShader, 'rotation'), c, s);
+		gl.uniform2f(gl.getUniformLocation(spriteShader, 'scale'), b.width / cScale, b.height / cScale);
+		gl.uniform1f(gl.getUniformLocation(spriteShader, 'alpha'), alpha);
+
+		gl.activeTexture(gl.TEXTURE0);
+		gl.bindTexture(gl.TEXTURE_2D, b.texture);
+		gl.uniform1i(gl.getUniformLocation(spriteShader, 'sprite'), 0);
+
+		var posLoc = gl.getAttribLocation(spriteShader, 'attrPosition');
+		gl.enableVertexAttribArray(posLoc);
+		gl.bindBuffer(gl.ARRAY_BUFFER, spriteVertBuffer);
+		gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+		gl.disableVertexAttribArray(posLoc);
+		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		gl.disable(gl.BLEND);
+	}
 
 	var pointVertexBuffer = null;
 	var pointColorBuffer = null;
@@ -1323,61 +1729,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		if (meshShader == null)
 			meshShader = createShader(gl, meshVertexShader, meshFragmentShader);
 
-		// boat : dessiné avant l'eau, les particules masquent sa partie immergée
+		// corps flottants : dessinés avant l'eau, les particules masquent leur partie immergée
 
-		if (spriteShader == null)
-			spriteShader = createShader(gl, spriteVertexShader, spriteFragmentShader);
-
-		if (boatVertBuffer == null) {
-			boatVertBuffer = gl.createBuffer();
-			gl.bindBuffer(gl.ARRAY_BUFFER, boatVertBuffer);
-			gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, 0.5]), gl.STATIC_DRAW);
-			gl.bindBuffer(gl.ARRAY_BUFFER, null);
-
-			// texture du sprite, première ligne en bas, pixels transparents hors du bateau
-			var pixels = new Uint8Array(4 * boatWidth * boatHeight);
-			for (var r = 0; r < boatHeight; r++) {
-				for (var c = 0; c < boatWidth; c++) {
-					var color = boatColors[boatSprite[boatHeight - 1 - r].charAt(c)];
-					if (color) {
-						var p = 4 * (r * boatWidth + c);
-						pixels[p] = color[0]; pixels[p + 1] = color[1]; pixels[p + 2] = color[2]; pixels[p + 3] = 255;
-					}
-				}
-			}
-			boatTexture = gl.createTexture();
-			gl.bindTexture(gl.TEXTURE_2D, boatTexture);
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, boatWidth, boatHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-		}
-
-		var boatCos = Math.cos(boat.angle);
-		var boatSin = Math.sin(boat.angle);
-
-		gl.useProgram(spriteShader);
-		gl.uniform2f(gl.getUniformLocation(spriteShader, 'domainSize'), simWidth, simHeight);
-		gl.uniform2f(gl.getUniformLocation(spriteShader, 'translation'), 
-			boat.x + boatCos * boat.centerX - boatSin * boat.centerY, 
-			boat.y + boatSin * boat.centerX + boatCos * boat.centerY);
-		gl.uniform2f(gl.getUniformLocation(spriteShader, 'rotation'), boatCos, boatSin);
-		gl.uniform2f(gl.getUniformLocation(spriteShader, 'scale'), boat.width, boat.height);
-
-		gl.activeTexture(gl.TEXTURE0);
-		gl.bindTexture(gl.TEXTURE_2D, boatTexture);
-		gl.uniform1i(gl.getUniformLocation(spriteShader, 'sprite'), 0);
-
-		var posLoc = gl.getAttribLocation(spriteShader, 'attrPosition');
-		gl.enableVertexAttribArray(posLoc);
-		gl.bindBuffer(gl.ARRAY_BUFFER, boatVertBuffer);
-		gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-		gl.disableVertexAttribArray(posLoc);
-		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		if (iceberg.visible)
+			drawBody(iceberg, 1.0);
+		if (boat.visible)
+			drawBody(boat, 1.0);
 
 		// water
 
@@ -1414,6 +1771,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		gl.disableVertexAttribArray(colorLoc);
 
 		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+		// l'iceberg se devine à travers l'eau
+
+		if (iceberg.visible && icebergGhost > 0.0)
+			drawBody(iceberg, icebergGhost);
 
 		// disk
 
@@ -1811,7 +2173,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 				scene.numSubSteps > 1 ? 1 : scene.numParticleIters, 
 				scene.overRelaxation, scene.compensateDrift,
 				scene.obstacleX, scene.obstacleY, scene.obstacleRadius, scene.colorFieldNr);
-			simulateBoat(scene.dt, scene.gravityX * scene.accScale, scene.gravity * scene.accScale);
+			simulateBodies(scene.dt, scene.gravityX * scene.accScale, scene.gravity * scene.accScale);
 		}
 		scene.frameNr++;
 	}
