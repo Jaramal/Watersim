@@ -52,7 +52,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	<input type = "checkbox" checked onclick = "scene.compensateDrift = !scene.compensateDrift">Compensate Drift &nbsp;
 	<input type = "checkbox" checked onclick = "toggleColorChange()">Couleurs &nbsp;
-	<input type = "checkbox" onclick = "pixelPerfect = !pixelPerfect; placeCanvas()">480x480 &nbsp;
+	<input type = "checkbox" onclick = "toggleEspMode()">ESP-Mosaico &nbsp;
 	PIC
 	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
 	&nbsp; Secousses
@@ -62,8 +62,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	<input id = "sizeSlider" type = "range" min = "0" max = "100" value = "100" class = "slider" style = "width:140px" oninput = "updateTankSize()">
 	<span id="sizeLabel"></span>
 <br>
+	<span id="perfStatus"></span>
+<br>
 	<span id="motionStatus"></span>
-	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none; image-rendering:pixelated"></canvas>
+	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none"></canvas>
 	
 <script>
 
@@ -72,30 +74,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	canvas.width = 480;
 	canvas.height = 480;
 
-	// affichage : par défaut le canvas est agrandi à toute la largeur de l'écran ;
-	// en mode pixel perfect il occupe 480 x 480 pixels physiques, calé sur la grille de pixels.
-	// dans les deux cas la simulation est calculée en 480 x 480
-	var pixelPerfect = false;
+	// affichage : le canvas est agrandi à toute la largeur de l'écran,
+	// la simulation est toujours calculée en 480 x 480
 
 	function placeCanvas()
 	{
-		var dpr = window.devicePixelRatio || 1;
-		var size, left, top;
-		if (pixelPerfect) {
-			size = canvas.width / dpr;
-			left = Math.round((window.innerWidth * dpr - canvas.width) / 2) / dpr;
-			top = Math.round((window.innerHeight * dpr - canvas.height) / 2) / dpr;
-		}
-		else {
-			size = Math.min(window.innerWidth, window.innerHeight) - 4;
-			left = (window.innerWidth - size) / 2;
-			top = (window.innerHeight - size) / 2;
-		}
+		var size = Math.min(window.innerWidth, window.innerHeight) - 4;
 		canvas.style.width = size + "px";
 		canvas.style.height = size + "px";
-		canvas.style.left = left + "px";
-		canvas.style.top = top + "px";
-		canvas.style.imageRendering = pixelPerfect ? "pixelated" : "auto";
+		canvas.style.left = ((window.innerWidth - size) / 2) + "px";
+		canvas.style.top = ((window.innerHeight - size) / 2) + "px";
 
 		// largeur physique estimée de l'affichage : 160 pixels CSS par pouce sur un téléphone, 96 sinon
 		var cssPerInch = navigator.maxTouchPoints > 0 ? 160 : 96;
@@ -674,6 +662,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		accScale : 1.0,		// simHeight / tankSize
 		numSubSteps : 1,
 		minPressureIters : 8,
+		espMode : false,	// budget de calcul de la carte cible (ESP-Mosaico, ESP32-S31)
+		targetFps : 0,		// 0 : une image par rafraîchissement de l'écran
 //		gravity : 0.0,
 		dt : 1.0 / 120.0,
 		flipRatio : 0.9,
@@ -699,9 +689,22 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		scene.dt = 1.0 / 60.0;
 		scene.numPressureIters = 50;
+		scene.minPressureIters = 8;
 		scene.numParticleIters = 2;
+		scene.targetFps = 0;
 
 		var res = 100;
+
+		if (scene.espMode) {
+			// budget ESP-Mosaico : grille 2 fois plus grossière, environ 5 fois moins de particules,
+			// moins d'itérations de pression, et 30 images par seconde (pas de temps doublé,
+			// ce que la grille plus grossière permet sans perte de stabilité)
+			res = espRes;
+			scene.numPressureIters = espPressureIters;
+			scene.minPressureIters = espMinPressureIters;
+			scene.targetFps = espFps;
+			scene.dt = 1.0 / espFps;
+		}
 		
 		var tankHeight = 1.0 * simHeight;
 		var tankWidth = 1.0 * simWidth;
@@ -1181,14 +1184,30 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	function updateTankSize()
 	{
 		var t = document.getElementById("sizeSlider").value / 100.0;
-		var minSize = Math.min(displaySize, simHeight);
+		var minSize = Math.min(scene.espMode ? espDisplaySize : displaySize, simHeight);
 		scene.tankSize = minSize * Math.pow(simHeight / minSize, t);
 		scene.accScale = simHeight / scene.tankSize;
 		scene.numSubSteps = clamp(Math.ceil(Math.sqrt(scene.accScale)), 1, 8);
 
 		var cm = scene.tankSize * 100.0;
 		document.getElementById("sizeLabel").textContent = 
-			(cm >= 10.0 ? cm.toFixed(0) : cm.toFixed(1)) + " cm" + (t == 0.0 ? " (taille réelle estimée)" : "");
+			(cm >= 10.0 ? cm.toFixed(0) : cm.toFixed(1)) + " cm" + (t == 0.0 ? (scene.espMode ? " (taille réelle de l'écran de l'ESP-Mosaico)" : " (taille réelle estimée)") : "");
+	}
+
+	// mode ESP-Mosaico : la simulation est reconstruite avec le budget de calcul de la carte cible
+
+	var espRes = 48;
+	var espPressureIters = 20;
+	var espMinPressureIters = 5;
+	var espFps = 30;
+	var espDisplaySize = 0.0388;	// écran carré de 2,16 pouces de diagonale, en mètres
+
+	function toggleEspMode()
+	{
+		scene.espMode = !scene.espMode;
+		setupScene();
+		scene.showObstacle = false;
+		updateTankSize();
 	}
 
 	function toggleColorChange()
@@ -1230,9 +1249,35 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			scene.frameNr++;
 	}
 
+	var lastFrameTime = 0.0;
+	var perfTime = 0.0;
+	var perfFrames = 0;
+	var perfSimMs = 0.0;
+
 	function update() {
+		var now = performance.now();
+
+		// cadence limitée en mode ESP-Mosaico : on saute les rafraîchissements en trop
+		if (scene.targetFps > 0 && now - lastFrameTime < 1000.0 / scene.targetFps - 4.0) {
+			requestAnimationFrame(update);
+			return;
+		}
+		lastFrameTime = now;
+
 		simulate();
+		perfSimMs += performance.now() - now;
+		perfFrames++;
 		draw();
+
+		if (now - perfTime >= 1000.0) {
+			document.getElementById("perfStatus").textContent = 
+				scene.fluid.numParticles + " particules, grille " + scene.fluid.fNumX + "x" + scene.fluid.fNumY + 
+				", " + (perfFrames * 1000.0 / (now - perfTime)).toFixed(0) + " images/s, calcul " + 
+				(perfSimMs / perfFrames).toFixed(1) + " ms/image";
+			perfTime = now;
+			perfFrames = 0;
+			perfSimMs = 0.0;
+		}
 		requestAnimationFrame(update);
 	}
 	
