@@ -65,12 +65,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	<span id="perfStatus"></span>
 <br>
 	<span id="motionStatus"></span>
-	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none"></canvas>
+	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none; background:linear-gradient(#000000, #000080)"></canvas>
 	
 <script>
 
 	var canvas = document.getElementById("myCanvas");
 	var gl = canvas.getContext("webgl");	
+
+	// couleur de l'eau : #00004d
+	var waterBlue = 0x4d / 255.0;
 	canvas.width = 480;
 	canvas.height = 480;
 
@@ -166,7 +169,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			this.particlePos = new Float32Array(2 * this.maxParticles);
 			this.particleColor = new Float32Array(3 * this.maxParticles);
 			for (var i = 0; i < this.maxParticles; i++)
-				this.particleColor[3 * i + 2] = 1.0;
+				this.particleColor[3 * i + 2] = waterBlue;
 
 			this.particleVel = new Float32Array(2 * this.maxParticles);
 			this.particleDensity = new Float32Array(this.fNumCells);
@@ -622,7 +625,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 				this.particleColor[3 * i] = clamp(this.particleColor[3 * i] - s, 0.0, 1.0);
 				this.particleColor[3 * i + 1] = clamp(this.particleColor[3 * i + 1] - s, 0.0, 1.0);
-				this.particleColor[3 * i + 2] = clamp(this.particleColor[3 * i + 2] + s, 0.0, 1.0);
+				this.particleColor[3 * i + 2] = clamp(this.particleColor[3 * i + 2] - s, waterBlue, 1.0);
 
 				var x = this.particlePos[2 * i];
 				var y = this.particlePos[2 * i + 1];
@@ -1209,7 +1212,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	function draw() 
 	{
-		gl.clearColor(0.0, 0.0, 0.0, 1.0);
+		gl.clearColor(0.0, 0.0, 0.0, 0.0);		// transparent : le dégradé du canvas sert de fond
 		gl.clear(gl.COLOR_BUFFER_BIT);
 
 		gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
@@ -1624,12 +1627,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	{
 		scene.colorChange = !scene.colorChange;
 		if (!scene.colorChange) {
-			// retour immédiat au bleu uniforme
+			// retour immédiat à la couleur uniforme de l'eau
 			var f = scene.fluid;
 			for (var i = 0; i < f.maxParticles; i++) {
 				f.particleColor[3 * i] = 0.0;
 				f.particleColor[3 * i + 1] = 0.0;
-				f.particleColor[3 * i + 2] = 1.0;
+				f.particleColor[3 * i + 2] = waterBlue;
 			}
 		}
 	}
