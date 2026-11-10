@@ -777,55 +777,60 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	// bateau -------------------------------------------------------
 
-	// sprite de 30 x 30 pixels, '.' = transparent
-	// h, H : coque, K : quille lestée, M : mât, W, S : voiles, R : fanion
+	// sprite de 60 x 30 pixels (paquebot), '.' = transparent
+	// K, b : coque et hublots, R, G : fond lesté de la coque, W, B : ponts supérieurs,
+	// Y : cheminées, M : mâts et haut des cheminées
 
 	var boatSprite = [
-		"..............................",
-		"..............................",
-		"..............MRRRR...........",
-		"..............MRRR............",
-		"..............MRR.............",
-		"..............M...............",
-		"..............MS..............",
-		"..............MWS.............",
-		".............SMWWS............",
-		"............SWMWWWS...........",
-		"............SWMWWWS...........",
-		"...........SWWMWWWWS..........",
-		"..........SWWWMWWWWWS.........",
-		".........SWWWWMWWWWWWS........",
-		".........SWWWWMWWWWWWWS.......",
-		"........SWWWWWMWWWWWWWWS......",
-		".......SWWWWWWMWWWWWWWWS......",
-		"......SWWWWWWWMWWWWWWWWWS.....",
-		"......SWWWWWWWMWWWWWWWWWWS....",
-		".....SSSSSSSSSMSSSSSSSSSSSS...",
-		"..............M...............",
-		".hhhhhhhhhhhhhhhhhhhhhhhhhhhh.",
-		"..HHHHHHHHHHHHHHHHHHHHHHHHHHH.",
-		"...HHHHHHHHHHHHHHHHHHHHHHHHH..",
-		"....HHHHHHHHHHHHHHHHHHHHHHH...",
-		".....HHHHHHHHHHHHHHHHHHHHH....",
-		"......KKKKKKKKKKKKKKKKKKK.....",
-		"........KKKKKKKKKKKKKKK.......",
-		"..............................",
-		".............................."
+		"............................................................",
+		"............................................................",
+		".........R.................................................R",
+		".........R.................................................R",
+		".........R........MMMM.....MMMM.....MMMM.....MMMM..........R",
+		"........R.........MMMM.....MMMM.....MMMM.....MMMM.........R.",
+		"........R........YYYYY....YYYYY....YYYYY....YYYYY.........R.",
+		"........R........YYYYY....YYYYY....YYYYY....YYYYY.........R.",
+		"........R.......YYYYY....YYYYY....YYYYY....YYYYY..........R.",
+		".......R........YYYYY....YYYYY....YYYYY....YYYYY.........R..",
+		".......R.......YYYYY....YYYYY....YYYYY....YYYYY..........R..",
+		".......R.......YYYYY....YYYYY....YYYYY....YYYYY..........R..",
+		".......RWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW..R..",
+		"......R.WBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBW.R...",
+		"......R.WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW.R...",
+		"......R.WBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBWBW.R...",
+		"KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+		"KKKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKK",
+		".KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+		".KKKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKbKKK",
+		"..KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+		"..KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+		"...KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+		"....KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK",
+		".....RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR.",
+		".....RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR",
+		"......RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR",
+		"......RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRGR",
+		".......RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRGG",
+		"........RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRG."
 	];
 
 	var boatColors = {
-		h : [190, 125, 70], H : [150, 90, 45], K : [95, 55, 30], M : [70, 45, 25],
-		W : [250, 250, 245], S : [205, 210, 220], R : [220, 40, 40]
+		K : [0, 0, 0], M : [0, 0, 0], R : [110, 4, 25], G : [204, 149, 8],
+		W : [255, 255, 255], Y : [255, 255, 59], B : [89, 114, 255], b : [89, 114, 255]
 	};
 
-	// densité de chaque partie par rapport à l'eau : le fond est lourd, les voiles légères,
-	// la moyenne est inférieure à 1 donc le bateau flotte et se redresse
-	var boatDensities = { h : 0.25, H : 0.25, K : 1.6, M : 0.3, W : 0.1, S : 0.1, R : 0.1 };
+	// densité de chaque partie par rapport à l'eau : le fond est lourd, les superstructures légères,
+	// la moyenne est inférieure à 1 donc le bateau flotte
+	var boatDensities = { K : 0.35, b : 0.35, R : 0.8, G : 0.8, W : 0.15, B : 0.15, Y : 0.1, M : 0.1 };
 
-	// prise de l'eau sur chaque partie : une voile immergée est bien plus entraînée que la coque
-	var boatDragFactors = { h : 1.0, H : 1.0, K : 1.0, M : 1.0, W : 3.0, S : 3.0, R : 3.0 };
+	// prise de l'eau sur chaque partie : les superstructures immergées sont plus entraînées que la coque
+	var boatDragFactors = { K : 1.0, b : 1.0, R : 1.0, G : 1.0, W : 2.0, B : 2.0, Y : 2.0, M : 2.0 };
 
-	var boatSize = 30;			// pixels
+	var boatWidth = 60;			// pixels
+	var boatHeight = 30;
+	var boatBlockX = 5;			// un point d'échantillonnage par bloc de 5 x 3 pixels
+	var boatBlockY = 3;
+	var boatRighting = 35.0;	// lest virtuel : bras de levier du couple de redressement, en pixels
 	var boatDrag = 2.0;			// entraînement par l'eau, par seconde
 	var boatAirDamping = 0.5;	// amortissement hors de l'eau, par seconde
 	var boatRollDamping = 25.0;	// frein de l'eau à la rotation, par seconde
@@ -841,7 +846,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		pointArea : null,					// surface (volume déplacé) de chaque point, en pixels
 		pointDrag : null,					// prise de l'eau sur chaque point
 		centerX : 0.0, centerY : 0.0,		// centre du sprite dans le repère du bateau
-		area : 0.0, drag : 0.0, width : 0.0,
+		area : 0.0, drag : 0.0, width : 0.0, height : 0.0,
 		density : null, u : null, v : null	// eau vue par le bateau : densité et vitesses de la grille, lissées dans le temps
 	};
 
@@ -849,22 +854,21 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	{
 		var b = boat;
 		var px = 1.0 / cScale;		// taille d'un pixel dans la simulation
-		var block = 3;				// un point d'échantillonnage par bloc de 3 x 3 pixels
 		var xs = [], ys = [], areas = [], masses = [], drags = [];
 
-		for (var r0 = 0; r0 < boatSize; r0 += block) {
-			for (var c0 = 0; c0 < boatSize; c0 += block) {
+		for (var r0 = 0; r0 < boatHeight; r0 += boatBlockY) {
+			for (var c0 = 0; c0 < boatWidth; c0 += boatBlockX) {
 				var area = 0.0, mass = 0.0, drag = 0.0, sx = 0.0, sy = 0.0;
-				for (var r = r0; r < r0 + block; r++) {
-					for (var c = c0; c < c0 + block; c++) {
+				for (var r = r0; r < r0 + boatBlockY; r++) {
+					for (var c = c0; c < c0 + boatBlockX; c++) {
 						var ch = boatSprite[r].charAt(c);
 						if (ch == '.')
 							continue;
 						area += 1.0;
 						mass += boatDensities[ch];
 						drag += boatDragFactors[ch];
-						sx += (c + 0.5 - 0.5 * boatSize) * px;
-						sy += (0.5 * boatSize - r - 0.5) * px;
+						sx += (c + 0.5 - 0.5 * boatWidth) * px;
+						sy += (0.5 * boatHeight - r - 0.5) * px;
 					}
 				}
 				if (area > 0.0) {
@@ -902,7 +906,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		}
 		b.centerX = -cx;
 		b.centerY = -cy;
-		b.width = boatSize * px;
+		b.width = boatWidth * px;
+		b.height = boatHeight * px;
 
 		b.x = x; b.y = y; b.angle = 0.0;
 		b.vx = 0.0; b.vy = 0.0; b.omega = 0.0;
@@ -948,8 +953,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		var h = f.h;
 		var h2 = 0.5 * h;
-		var minX = h, maxX = (f.fNumX - 1) * h;
-		var minY = h, maxY = (f.fNumY - 1) * h;
+		var margin = 2.0 / cScale;		// les points sont au centre des blocs, pas au bord du dessin
+		var minX = h + margin, maxX = (f.fNumX - 1) * h - margin;
+		var minY = h + margin, maxY = (f.fNumY - 1) * h - margin;
 		var timeScale = Math.sqrt(scene.accScale);
 
 		// la grille est bruitée d'une image à l'autre : le bateau en voit une version lissée dans le temps
@@ -973,7 +979,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		// sous-pas : assez pour suivre l'oscillation de flottaison et l'entraînement
 		var g = Math.sqrt(gravityX * gravityX + gravityY * gravityY);
-		var rate = Math.max(Math.sqrt(g * b.width * cScale * cScale / b.mass), dragRate * b.drag / b.mass, rollRate);
+		var righting = boatRighting / cScale * b.mass;
+		var rate = Math.max(Math.sqrt(g * b.width * cScale * cScale / b.mass), dragRate * b.drag / b.mass, rollRate,
+			Math.sqrt(righting * g / b.inertia));
 		var numSteps = clamp(Math.ceil(dt * rate / 0.4), 1, 40);
 		var sdt = dt / numSteps;
 		var airFactor = Math.exp(-boatAirDamping * timeScale * sdt);
@@ -1013,6 +1021,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 				fy += pfy;
 				torque += rx * pfy - ry * pfx;
 			}
+
+			// lest virtuel : dans l'eau, un couple ramène le pont vers le haut (à l'opposé de la gravité).
+			// sans lui une coque aussi large resterait stable à l'envers
+			torque += righting * Math.min(subArea / b.mass, 1.0) * (gravityX * c + gravityY * s);
 
 			b.vx = (b.vx + sdt * fx / b.mass) * airFactor;
 			b.vy = (b.vy + sdt * fy / b.mass) * airFactor;
@@ -1131,7 +1143,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		uniform vec2 domainSize;
 		uniform vec2 translation;
 		uniform vec2 rotation;
-		uniform float scale;
+		uniform vec2 scale;
 
 		varying vec2 fragCoord;
 
@@ -1257,19 +1269,19 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
 			// texture du sprite, première ligne en bas, pixels transparents hors du bateau
-			var pixels = new Uint8Array(4 * boatSize * boatSize);
-			for (var r = 0; r < boatSize; r++) {
-				for (var c = 0; c < boatSize; c++) {
-					var color = boatColors[boatSprite[boatSize - 1 - r].charAt(c)];
+			var pixels = new Uint8Array(4 * boatWidth * boatHeight);
+			for (var r = 0; r < boatHeight; r++) {
+				for (var c = 0; c < boatWidth; c++) {
+					var color = boatColors[boatSprite[boatHeight - 1 - r].charAt(c)];
 					if (color) {
-						var p = 4 * (r * boatSize + c);
+						var p = 4 * (r * boatWidth + c);
 						pixels[p] = color[0]; pixels[p + 1] = color[1]; pixels[p + 2] = color[2]; pixels[p + 3] = 255;
 					}
 				}
 			}
 			boatTexture = gl.createTexture();
 			gl.bindTexture(gl.TEXTURE_2D, boatTexture);
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, boatSize, boatSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, boatWidth, boatHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
@@ -1285,7 +1297,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			boat.x + boatCos * boat.centerX - boatSin * boat.centerY, 
 			boat.y + boatSin * boat.centerX + boatCos * boat.centerY);
 		gl.uniform2f(gl.getUniformLocation(spriteShader, 'rotation'), boatCos, boatSin);
-		gl.uniform1f(gl.getUniformLocation(spriteShader, 'scale'), boat.width);
+		gl.uniform2f(gl.getUniformLocation(spriteShader, 'scale'), boat.width, boat.height);
 
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, boatTexture);
