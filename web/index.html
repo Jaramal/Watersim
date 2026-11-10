@@ -13,59 +13,147 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 -->
 
 <!DOCTYPE html>
-<html>
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+<html lang="fr" data-bs-theme="dark">
 	<head>
-		<title>FLIP Fluid</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+		<title>Watersim</title>
 		<link rel="manifest" href="manifest.json">
 		<meta name="theme-color" content="#000000">
+		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
 		<style>
-			body {
-				font-family: verdana; 
-				font-size: 15px;
-			}			
-			.button {
-				background-color: #606060;
-				border: none;
-				color: white;
-				padding: 10px 10px;
-				font-size: 16px;
-				margin: 4px 2px;
+			html, body {
+				height: 100%;
+				margin: 0;
+				overflow: hidden;
+				overscroll-behavior: none;
+				touch-action: none;
+				background: #05060a;
+			}
+			#myCanvas {
+				position: fixed;
+				touch-action: none;
+				outline: 1px solid rgba(255, 255, 255, 0.15);
+				transition: top 0.25s ease;
+				background: linear-gradient(#000000, #000080);
+			}
+
+			/* menu des options : masqué sous le bas de l'écran, on le fait monter en balayant vers le haut */
+			.menu-sheet {
+				position: fixed;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				z-index: 20;
+				max-height: 85vh;
+				overflow-y: auto;
+				touch-action: pan-y;
+				padding-bottom: env(safe-area-inset-bottom);
+				background: rgba(22, 24, 29, 0.94);
+				color: #e9ecef;
+				transform: translateY(100%);
+				visibility: hidden;
+				transition: transform 0.25s ease, visibility 0s linear 0.25s;
+			}
+			.menu-sheet.open {
+				transform: none;
+				visibility: visible;
+				transition: transform 0.25s ease;
+			}
+			.menu-content {
+				max-width: 520px;
+				margin: 0 auto;
+				padding: 0 16px 16px;
+			}
+			.menu-grip {
+				display: flex;
+				justify-content: center;
+				padding: 10px 0 8px;
+				touch-action: none;
+			}
+			.menu-handle {
+				position: fixed;
+				left: 0;
+				right: 0;
+				bottom: 0;
+				z-index: 10;
+				height: 30px;
+				display: flex;
+				justify-content: center;
+				align-items: center;
+				padding-bottom: env(safe-area-inset-bottom);
 				cursor: pointer;
 			}
-			.slider {
-				-webkit-appearance: none;
-				width: 80px;
-				height: 6px;
-				border-radius: 5px;
-				background: #d3d3d3;
-				outline: none;
-				opacity: 0.7;
-				-webkit-transition: .2s;
-				transition: opacity .2s;
+			.menu-grip span, .menu-handle span {
+				width: 44px;
+				height: 5px;
+				border-radius: 3px;
+				background: rgba(255, 255, 255, 0.35);
+			}
+			.menu-status {
+				font-size: 12px;
+				opacity: 0.65;
 			}
 		</style>
 	</head>
 	
 <body>
 
-	<input type = "checkbox" checked onclick = "scene.compensateDrift = !scene.compensateDrift">Compensate Drift &nbsp;
-	<input type = "checkbox" checked onclick = "toggleColorChange()">Couleurs &nbsp;
-	<input type = "checkbox" onclick = "toggleEspMode()">ESP-Mosaico &nbsp;
-	PIC
-	<input type = "range" min = "0" max = "10" value = "9" class = "slider" onchange="scene.flipRatio = 0.1 * this.value"> FLIP 
-	&nbsp; Secousses
-	<input type = "range" min = "0" max = "10" value = "4" class = "slider" onchange="scene.shakeGain = 1.0 * this.value">
-<br>
-	Taille
-	<input id = "sizeSlider" type = "range" min = "0" max = "100" value = "100" class = "slider" style = "width:140px" oninput = "updateTankSize()">
-	<span id="sizeLabel"></span>
-<br>
-	<span id="perfStatus"></span>
-<br>
-	<span id="motionStatus"></span>
-	<canvas id="myCanvas" style="outline:2px solid; position:fixed; touch-action:none; background:linear-gradient(#000000, #000080)"></canvas>
+	<canvas id="myCanvas"></canvas>
+
+	<div id="menuHandle" class="menu-handle" role="button" aria-label="Ouvrir les options"><span></span></div>
+
+	<div id="menu" class="menu-sheet border-top rounded-top-4 shadow-lg" aria-hidden="true">
+		<div class="menu-grip"><span></span></div>
+		<div class="menu-content">
+
+			<div class="d-flex align-items-center mb-3">
+				<h6 class="mb-0 flex-grow-1">Options</h6>
+				<button id="menuClose" type="button" class="btn-close" aria-label="Fermer"></button>
+			</div>
+
+			<div class="row g-2 mb-3">
+				<div class="col-12 col-sm-4">
+					<div class="form-check form-switch">
+						<input id="optEsp" class="form-check-input" type="checkbox" role="switch" onchange="toggleEspMode()">
+						<label class="form-check-label" for="optEsp">ESP-Mosaico</label>
+					</div>
+				</div>
+				<div class="col-6 col-sm-4">
+					<div class="form-check form-switch">
+						<input id="optColors" class="form-check-input" type="checkbox" role="switch" checked onchange="toggleColorChange()">
+						<label class="form-check-label" for="optColors">Couleurs</label>
+					</div>
+				</div>
+				<div class="col-6 col-sm-4">
+					<div class="form-check form-switch">
+						<input id="optDrift" class="form-check-input" type="checkbox" role="switch" checked onchange="scene.compensateDrift = this.checked">
+						<label class="form-check-label" for="optDrift">Compensate Drift</label>
+					</div>
+				</div>
+			</div>
+
+			<label class="form-label d-flex justify-content-between mb-0" for="sizeSlider">
+				<span>Taille</span><span id="sizeLabel" class="text-body-secondary"></span>
+			</label>
+			<input id="sizeSlider" class="form-range" type="range" min="0" max="100" value="100" oninput="updateTankSize()">
+
+			<label class="form-label d-flex justify-content-between mb-0 mt-2" for="shakeSlider">
+				<span>Secousses</span><span id="shakeLabel" class="text-body-secondary"></span>
+			</label>
+			<input id="shakeSlider" class="form-range" type="range" min="0" max="10" value="4" oninput="updateSliders()">
+
+			<label class="form-label d-flex justify-content-between mb-0 mt-2" for="flipSlider">
+				<span>PIC / FLIP</span><span id="flipLabel" class="text-body-secondary"></span>
+			</label>
+			<input id="flipSlider" class="form-range" type="range" min="0" max="10" value="9" oninput="updateSliders()">
+
+			<div class="menu-status mt-3">
+				<div id="perfStatus"></div>
+				<div id="motionStatus"></div>
+			</div>
+		</div>
+	</div>
 	
 <script>
 
@@ -85,16 +173,23 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	{
 		var espMode = typeof scene != "undefined" && scene && scene.espMode;
 		var dpr = window.devicePixelRatio || 1;
+
+		// menu ouvert : la simulation remonte pour rester visible au-dessus, tant qu'il y a la place
+		var menuElem = document.getElementById("menu");
+		var height = window.innerHeight;
+		if (menuElem && menuElem.classList.contains("open"))
+			height -= menuElem.offsetHeight;
+
 		var size, left, top;
 		if (espMode) {
 			size = canvas.width / dpr;
 			left = Math.round((window.innerWidth * dpr - canvas.width) / 2) / dpr;
-			top = Math.round((window.innerHeight * dpr - canvas.height) / 2) / dpr;
+			top = Math.round(Math.max((height * dpr - canvas.height) / 2, 0)) / dpr;
 		}
 		else {
 			size = Math.min(window.innerWidth, window.innerHeight) - 4;
 			left = (window.innerWidth - size) / 2;
-			top = (window.innerHeight - size) / 2;
+			top = Math.max((height - size) / 2, 2);
 		}
 		canvas.style.width = size + "px";
 		canvas.style.height = size + "px";
@@ -692,7 +787,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		obstacleX : 0.0,
 		obstacleY : 0.0,
 		obstacleRadius: 0.15,
-		paused: true,
+		paused: false,
 		showObstacle: true,
 		obstacleVelX: 0.0,
 		obstacleVelY: 0.0,
@@ -1491,6 +1586,62 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		}
 	});
 
+	// menu des options -------------------------------------------------------
+
+	var menu = document.getElementById("menu");
+
+	function setMenuOpen(open) {
+		menu.classList.toggle("open", open);
+		menu.setAttribute("aria-hidden", open ? "false" : "true");
+		placeCanvas();
+	}
+
+	document.getElementById("menuHandle").addEventListener('click', event => { setMenuOpen(true); });
+	document.getElementById("menuClose").addEventListener('click', event => { setMenuOpen(false); });
+
+	// balayage vers le haut hors de la simulation : ouvre le menu ;
+	// balayage vers le bas sur le menu (hors curseurs) : le referme
+
+	var swipeX = 0.0;
+	var swipeY = 0.0;
+	var swipeMode = 0;		// 0 : aucun, 1 : ouverture possible, 2 : fermeture possible
+
+	document.addEventListener('touchstart', event => {
+		swipeMode = 0;
+		if (event.touches.length != 1 || event.target == canvas)
+			return;
+		if (menu.contains(event.target)) {
+			if (event.target.tagName == "INPUT" || menu.scrollTop > 0)
+				return;
+			swipeMode = 2;
+		}
+		else if (!menu.classList.contains("open"))
+			swipeMode = 1;
+		swipeX = event.touches[0].clientX;
+		swipeY = event.touches[0].clientY;
+	}, { passive: true });
+
+	document.addEventListener('touchmove', event => {
+		if (swipeMode == 0)
+			return;
+		var dx = event.touches[0].clientX - swipeX;
+		var dy = event.touches[0].clientY - swipeY;
+		if (Math.abs(dy) < 40.0 || Math.abs(dx) > Math.abs(dy))
+			return;
+		if (swipeMode == 1 && dy < 0.0)
+			setMenuOpen(true);
+		else if (swipeMode == 2 && dy > 0.0)
+			setMenuOpen(false);
+		swipeMode = 0;
+	}, { passive: true });
+
+	function updateSliders() {
+		scene.shakeGain = 1.0 * document.getElementById("shakeSlider").value;
+		scene.flipRatio = 0.1 * document.getElementById("flipSlider").value;
+		document.getElementById("shakeLabel").textContent = "x " + scene.shakeGain.toFixed(0);
+		document.getElementById("flipLabel").textContent = (100.0 * scene.flipRatio).toFixed(0) + " % FLIP";
+	}
+
 	// accéléromètre : la gravité de la simulation suit l'inclinaison de l'appareil
 
 	var motionStatus = document.getElementById("motionStatus");
@@ -1604,7 +1755,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		var cm = scene.tankSize * 100.0;
 		document.getElementById("sizeLabel").textContent = 
-			(cm >= 10.0 ? cm.toFixed(0) : cm.toFixed(1)) + " cm" + (t == 0.0 ? (scene.espMode ? " (taille réelle de l'écran de l'ESP-Mosaico)" : " (taille réelle estimée)") : "");
+			(cm >= 10.0 ? cm.toFixed(0) : cm.toFixed(1)) + " cm" + (t == 0.0 ? (scene.espMode ? " (taille réelle de la carte)" : " (taille réelle estimée)") : "");
 	}
 
 	// mode ESP-Mosaico : la simulation est reconstruite avec le budget de calcul de la carte cible
@@ -1635,16 +1786,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 				f.particleColor[3 * i + 2] = waterBlue;
 			}
 		}
-	}
-
-	function toggleStart()
-	{
-		var button = document.getElementById('startButton');
-		if (scene.paused)
-			button.innerHTML = "Stop";
-		else
-			button.innerHTML = "Start";
-		scene.paused = !scene.paused;
 	}
 
 	// main -------------------------------------------------------
@@ -1699,6 +1840,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	setupScene();
 	scene.showObstacle = false;
 	updateTankSize();
+	updateSliders();
 	update();
 	
 </script> 
