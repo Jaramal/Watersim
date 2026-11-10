@@ -72,8 +72,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	var canvas = document.getElementById("myCanvas");
 	var gl = canvas.getContext("webgl");	
 
-	// couleur de l'eau : #00004d
-	var waterBlue = 0x4d / 255.0;
+	// couleur de l'eau : #0000a0
+	var waterBlue = 0xa0 / 255.0;
 	canvas.width = 480;
 	canvas.height = 480;
 
@@ -1224,43 +1224,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		if (meshShader == null)
 			meshShader = createShader(gl, meshVertexShader, meshFragmentShader);
 
-		// water
-
-		gl.clear(gl.DEPTH_BUFFER_BIT);
-
-		var pointSize = 2.0 * scene.fluid.particleRadius / simWidth * canvas.width;
-
-		gl.useProgram(pointShader);
-		gl.uniform2f(gl.getUniformLocation(pointShader, 'domainSize'), simWidth, simHeight);
-		gl.uniform1f(gl.getUniformLocation(pointShader, 'pointSize'), pointSize);
-
-		if (pointVertexBuffer == null)
-			pointVertexBuffer = gl.createBuffer();
-		if (pointColorBuffer == null)
-			pointColorBuffer = gl.createBuffer();
-
-		gl.bindBuffer(gl.ARRAY_BUFFER, pointVertexBuffer);
-		gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.particlePos, gl.DYNAMIC_DRAW);
-
-		var posLoc = gl.getAttribLocation(pointShader, 'attrPosition');
-		gl.enableVertexAttribArray(posLoc);
-		gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
-
-		gl.bindBuffer(gl.ARRAY_BUFFER, pointColorBuffer);
-		gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.particleColor, gl.DYNAMIC_DRAW);
-
-		var colorLoc = gl.getAttribLocation(pointShader, 'attrColor');
-		gl.enableVertexAttribArray(colorLoc);
-		gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
-
-		gl.drawArrays(gl.POINTS, 0, scene.fluid.numParticles); 
-
-		gl.disableVertexAttribArray(posLoc);
-		gl.disableVertexAttribArray(colorLoc);
-
-		gl.bindBuffer(gl.ARRAY_BUFFER, null);
-
-		// boat
+		// boat : dessiné avant l'eau, les particules masquent sa partie immergée
 
 		if (spriteShader == null)
 			spriteShader = createShader(gl, spriteVertexShader, spriteFragmentShader);
@@ -1314,6 +1278,42 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
 		gl.disableVertexAttribArray(posLoc);
+		gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+		// water
+
+		gl.clear(gl.DEPTH_BUFFER_BIT);
+
+		var pointSize = 2.0 * scene.fluid.particleRadius / simWidth * canvas.width;
+
+		gl.useProgram(pointShader);
+		gl.uniform2f(gl.getUniformLocation(pointShader, 'domainSize'), simWidth, simHeight);
+		gl.uniform1f(gl.getUniformLocation(pointShader, 'pointSize'), pointSize);
+
+		if (pointVertexBuffer == null)
+			pointVertexBuffer = gl.createBuffer();
+		if (pointColorBuffer == null)
+			pointColorBuffer = gl.createBuffer();
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, pointVertexBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.particlePos, gl.DYNAMIC_DRAW);
+
+		var posLoc = gl.getAttribLocation(pointShader, 'attrPosition');
+		gl.enableVertexAttribArray(posLoc);
+		gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+		gl.bindBuffer(gl.ARRAY_BUFFER, pointColorBuffer);
+		gl.bufferData(gl.ARRAY_BUFFER, scene.fluid.particleColor, gl.DYNAMIC_DRAW);
+
+		var colorLoc = gl.getAttribLocation(pointShader, 'attrColor');
+		gl.enableVertexAttribArray(colorLoc);
+		gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
+
+		gl.drawArrays(gl.POINTS, 0, scene.fluid.numParticles); 
+
+		gl.disableVertexAttribArray(posLoc);
+		gl.disableVertexAttribArray(colorLoc);
+
 		gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
 		// disk
