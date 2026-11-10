@@ -113,19 +113,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			</div>
 
 			<div class="row g-2 mb-3">
-				<div class="col-12 col-sm-4">
+				<div class="col-6">
 					<div class="form-check form-switch">
 						<input id="optEsp" class="form-check-input" type="checkbox" role="switch" onchange="toggleEspMode()">
 						<label class="form-check-label" for="optEsp">ESP-Mosaico</label>
 					</div>
 				</div>
-				<div class="col-6 col-sm-4">
-					<div class="form-check form-switch">
-						<input id="optColors" class="form-check-input" type="checkbox" role="switch" checked onchange="toggleColorChange()">
-						<label class="form-check-label" for="optColors">Couleurs</label>
-					</div>
-				</div>
-				<div class="col-6 col-sm-4">
+				<div class="col-6">
 					<div class="form-check form-switch">
 						<input id="optDrift" class="form-check-input" type="checkbox" role="switch" checked onchange="scene.compensateDrift = this.checked">
 						<label class="form-check-label" for="optDrift">Compensate Drift</label>
@@ -141,7 +135,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			<label class="form-label d-flex justify-content-between mb-0 mt-2" for="shakeSlider">
 				<span>Secousses</span><span id="shakeLabel" class="text-body-secondary"></span>
 			</label>
-			<input id="shakeSlider" class="form-range" type="range" min="0" max="10" value="4" oninput="updateSliders()">
+			<input id="shakeSlider" class="form-range" type="range" min="0" max="10" value="10" oninput="updateSliders()">
 
 			<label class="form-label d-flex justify-content-between mb-0 mt-2" for="flipSlider">
 				<span>PIC / FLIP</span><span id="flipLabel" class="text-body-secondary"></span>
@@ -160,8 +154,33 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	var canvas = document.getElementById("myCanvas");
 	var gl = canvas.getContext("webgl");	
 
-	// couleur de l'eau : #0000a0
-	var waterBlue = 0xa0 / 255.0;
+	// couleurs de l'eau : dégradé du bleu profond (eau dense et calme) au blanc (écume, embruns).
+	// chaque particule porte un niveau d'écume entre 0 et 1 qui choisit sa couleur dans la table
+
+	var waterStops = [
+		0.00, 0, 0, 160,
+		0.25, 8, 40, 195,
+		0.50, 25, 105, 230,
+		0.75, 105, 190, 250,
+		1.00, 240, 250, 255
+	];
+	var numWaterColors = 64;
+	var waterColors = new Float32Array(3 * numWaterColors);
+
+	for (var i = 0; i < numWaterColors; i++) {
+		var t = i / (numWaterColors - 1);
+		var k = 0;
+		while (k < waterStops.length / 4 - 2 && t > waterStops[4 * (k + 1)])
+			k++;
+		var u = (t - waterStops[4 * k]) / (waterStops[4 * (k + 1)] - waterStops[4 * k]);
+		for (var j = 0; j < 3; j++)
+			waterColors[3 * i + j] = (waterStops[4 * k + 1 + j] + u * (waterStops[4 * (k + 1) + 1 + j] - waterStops[4 * k + 1 + j])) / 255.0;
+	}
+
+	var foamRiseRate = 12.0;	// vitesse d'apparition de l'écume, par seconde
+	var foamFadeRate = 1.5;		// vitesse de retour au bleu profond, par seconde
+	var foamSpeed = 3.5;		// vitesse de l'eau à partir de laquelle elle s'éclaircit au maximum
+	var foamSpeedWeight = 0.6;	// éclaircissement maximal dû à la seule vitesse
 	canvas.width = 480;
 	canvas.height = 480;
 
@@ -263,8 +282,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 			this.particlePos = new Float32Array(2 * this.maxParticles);
 			this.particleColor = new Float32Array(3 * this.maxParticles);
-			for (var i = 0; i < this.maxParticles; i++)
-				this.particleColor[3 * i + 2] = waterBlue;
+			for (var i = 0; i < this.maxParticles; i++) {
+				this.particleColor[3 * i] = waterColors[0];
+				this.particleColor[3 * i + 1] = waterColors[1];
+				this.particleColor[3 * i + 2] = waterColors[2];
+			}
+			this.particleFoam = new Float32Array(this.maxParticles);
 
 			this.particleVel = new Float32Array(2 * this.maxParticles);
 			this.particleDensity = new Float32Array(this.fNumCells);
@@ -295,7 +318,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		pushParticlesApart(numIters) 
 		{
-			var colorDiffusionCoeff = 0.001;
 
 			// count particles per cell
 
@@ -377,16 +399,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 								this.particlePos[2 * i + 1] -= dy;
 								this.particlePos[2 * id] += dx;
 								this.particlePos[2 * id + 1] += dy;
-
-								// diffuse colors
-
-								for (var k = 0; k < 3; k++) {
-									var color0 = this.particleColor[3 * i + k];
-									var color1 = this.particleColor[3 * id + k];
-									var color = (color0 + color1) * 0.5;
-									this.particleColor[3 * i + k] = color0 + (color - color0) * colorDiffusionCoeff;
-									this.particleColor[3 * id + k] = color1 + (color - color1) * colorDiffusionCoeff;
-								}
 							}
 						}
 					}
@@ -701,44 +713,38 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			}
 		}
 
-		updateParticleColors() 
+		updateParticleColors(dt) 
 		{
-			// for (var i = 0; i < this.numParticles; i++) {
-			// 	this.particleColor[3 * i] *= 0.99; 
-			// 	this.particleColor[3 * i + 1] *= 0.99
-			// 	this.particleColor[3 * i + 2] = 
-			// 		clamp(this.particleColor[3 * i + 2] + 0.001, 0.0, 1.0)
-			// }
+			var d0 = this.particleRestDensity;
+			if (d0 <= 0.0)
+				return;
 
-			// return;
-
-			var h1 = this.fInvSpacing;
+			var h2 = 0.5 * this.h;
+			var timeScale = Math.sqrt(scene.accScale);
+			var rise = 1.0 - Math.exp(-foamRiseRate * timeScale * dt);
+			var fade = 1.0 - Math.exp(-foamFadeRate * timeScale * dt);
+			var speedScale = 1.0 / (foamSpeed * timeScale);
 
 			for (var i = 0; i < this.numParticles; i++) {
 
-				var s = 0.01;
+				// écume visée : d'autant plus forte que l'eau est peu dense autour de la particule, ou rapide
+				var relDensity = sampleGrid(this, this.particleDensity, this.particlePos[2 * i], this.particlePos[2 * i + 1], h2, h2) / d0;
+				var target = clamp((0.95 - relDensity) / 0.6, 0.0, 1.0);
 
-				this.particleColor[3 * i] = clamp(this.particleColor[3 * i] - s, 0.0, 1.0);
-				this.particleColor[3 * i + 1] = clamp(this.particleColor[3 * i + 1] - s, 0.0, 1.0);
-				this.particleColor[3 * i + 2] = clamp(this.particleColor[3 * i + 2] - s, waterBlue, 1.0);
+				var vx = this.particleVel[2 * i];
+				var vy = this.particleVel[2 * i + 1];
+				var speed = Math.sqrt(vx * vx + vy * vy) * speedScale;
+				target = Math.max(target, foamSpeedWeight * Math.min(speed, 1.0));
 
-				var x = this.particlePos[2 * i];
-				var y = this.particlePos[2 * i + 1];
-				var xi = clamp(Math.floor(x * h1), 1, this.fNumX - 1);
-				var yi = clamp(Math.floor(y * h1), 1, this.fNumY - 1);
-				var cellNr = xi * this.fNumY + yi;
+				// l'écume apparaît vite et s'estompe lentement
+				var foam = this.particleFoam[i];
+				foam += (target - foam) * (target > foam ? rise : fade);
+				this.particleFoam[i] = foam;
 
-				var d0 = this.particleRestDensity;
-
-				if (d0 > 0.0) {
-					var relDensity = this.particleDensity[cellNr] / d0;
-					if (relDensity < 0.7) {
-						var s = 0.8;
-						this.particleColor[3 * i] = s;
-						this.particleColor[3 * i + 1] = s;
-						this.particleColor[3 * i + 2] = 1.0;
-					}
-				}
+				var k = 3 * Math.floor(foam * (numWaterColors - 1) + 0.5);
+				this.particleColor[3 * i] = waterColors[k];
+				this.particleColor[3 * i + 1] = waterColors[k + 1];
+				this.particleColor[3 * i + 2] = waterColors[k + 2];
 			}
 		}
 
@@ -757,8 +763,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 				this.transferVelocities(false, flipRatio);
 			}
 
-			if (scene.colorChange)
-				this.updateParticleColors();
+			this.updateParticleColors(dt);
 		}
 	}
 
@@ -768,8 +773,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	{
 		gravity : -9.81,
 		gravityX : 0.0,
-		shakeGain : 4.0,
-		colorChange : true,
+		shakeGain : 10.0,
 		tankSize : 3.0,		// largeur réelle simulée, en mètres
 		accScale : 1.0,		// simHeight / tankSize
 		numSubSteps : 1,
@@ -1600,11 +1604,12 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 	document.getElementById("menuClose").addEventListener('click', event => { setMenuOpen(false); });
 
 	// balayage vers le haut hors de la simulation : ouvre le menu ;
-	// balayage vers le bas sur le menu (hors curseurs) : le referme
+	// balayage vers le bas sur le menu (hors curseurs) : le referme ;
+	// balayage vers le bas ailleurs, hors de la simulation : recharge la page
 
 	var swipeX = 0.0;
 	var swipeY = 0.0;
-	var swipeMode = 0;		// 0 : aucun, 1 : ouverture possible, 2 : fermeture possible
+	var swipeMode = 0;		// 0 : aucun, 1 : hors du menu, 2 : sur le menu
 
 	document.addEventListener('touchstart', event => {
 		swipeMode = 0;
@@ -1615,7 +1620,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 				return;
 			swipeMode = 2;
 		}
-		else if (!menu.classList.contains("open"))
+		else
 			swipeMode = 1;
 		swipeX = event.touches[0].clientX;
 		swipeY = event.touches[0].clientY;
@@ -1628,10 +1633,20 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		var dy = event.touches[0].clientY - swipeY;
 		if (Math.abs(dy) < 40.0 || Math.abs(dx) > Math.abs(dy))
 			return;
-		if (swipeMode == 1 && dy < 0.0)
-			setMenuOpen(true);
-		else if (swipeMode == 2 && dy > 0.0)
-			setMenuOpen(false);
+		if (swipeMode == 2) {
+			if (dy > 0.0)
+				setMenuOpen(false);
+		}
+		else if (dy < 0.0) {
+			if (!menu.classList.contains("open"))
+				setMenuOpen(true);
+		}
+		else {
+			// rechargement : geste plus long pour éviter les déclenchements involontaires
+			if (dy < 90.0)
+				return;
+			location.reload();
+		}
 		swipeMode = 0;
 	}, { passive: true });
 
@@ -1736,8 +1751,24 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			window.addEventListener('devicemotion', handleMotion);
 	}
 
-	if (typeof DeviceMotionEvent != "undefined" && typeof DeviceMotionEvent.requestPermission != "function")
+	if (typeof DeviceMotionEvent != "undefined" && typeof DeviceMotionEvent.requestPermission != "function") {
 		startMotion();
+
+		// certains navigateurs ne livrent les mesures qu'à une page active : tant que rien n'arrive,
+		// on redemande l'activation de la page et on réinscrit l'écoute du capteur
+		var motionRetries = 0;
+		var motionRetry = setInterval(() => {
+			if (motionEvents > 0 || ++motionRetries > 40) {
+				clearInterval(motionRetry);
+				return;
+			}
+			window.focus();
+			window.removeEventListener('devicemotion', handleMotion);
+			window.addEventListener('devicemotion', handleMotion);
+			if (window.isSecureContext)
+				setMotionStatus("en attente de données (page " + (document.hasFocus() ? "active" : "inactive") + ")");
+		}, 500);
+	}
 	canvas.addEventListener('touchend', startMotion);
 	canvas.addEventListener('mouseup', startMotion);
 
@@ -1772,20 +1803,6 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		setupScene();
 		scene.showObstacle = false;
 		placeCanvas();
-	}
-
-	function toggleColorChange()
-	{
-		scene.colorChange = !scene.colorChange;
-		if (!scene.colorChange) {
-			// retour immédiat à la couleur uniforme de l'eau
-			var f = scene.fluid;
-			for (var i = 0; i < f.maxParticles; i++) {
-				f.particleColor[3 * i] = 0.0;
-				f.particleColor[3 * i + 1] = 0.0;
-				f.particleColor[3 * i + 2] = waterBlue;
-			}
-		}
 	}
 
 	// main -------------------------------------------------------
