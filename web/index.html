@@ -1734,43 +1734,37 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		motionCount = 0;
 	}
 
-	var motionStarted = false;
+	// démarrage du capteur dès le lancement.
+	// l'écoute est toujours inscrite tout de suite : sur Android les mesures arrivent sans autre formalité.
+	// quand le navigateur propose une demande d'autorisation (Safari sur iOS, Chrome depuis la version 151),
+	// elle est tentée au lancement, puis à chaque toucher tant qu'elle n'est pas accordée
+	// (iOS ne l'accepte qu'à la suite d'un geste de l'utilisateur)
 
-	function startMotion() {
-		if (motionStarted || typeof DeviceMotionEvent == "undefined")
+	var motionGranted = false;
+
+	function requestMotion() {
+		if (motionGranted || motionEvents > 0)
 			return;
-		motionStarted = true;
-		if (typeof DeviceMotionEvent.requestPermission == "function") {
-			// iOS : l'autorisation doit être demandée à la suite d'un geste de l'utilisateur
+		if (typeof DeviceMotionEvent == "undefined" || typeof DeviceMotionEvent.requestPermission != "function")
+			return;
+		try {
 			DeviceMotionEvent.requestPermission().then(state => {
 				if (state == "granted")
-					window.addEventListener('devicemotion', handleMotion);
-			}).catch(() => { motionStarted = false; });
+					motionGranted = true;
+				else if (motionEvents == 0)
+					setMotionStatus("autorisation refusée par le navigateur");
+			}).catch(() => {});
 		}
-		else
-			window.addEventListener('devicemotion', handleMotion);
+		catch (e) {}
 	}
 
-	if (typeof DeviceMotionEvent != "undefined" && typeof DeviceMotionEvent.requestPermission != "function") {
-		startMotion();
-
-		// certains navigateurs ne livrent les mesures qu'à une page active : tant que rien n'arrive,
-		// on redemande l'activation de la page et on réinscrit l'écoute du capteur
-		var motionRetries = 0;
-		var motionRetry = setInterval(() => {
-			if (motionEvents > 0 || ++motionRetries > 40) {
-				clearInterval(motionRetry);
-				return;
-			}
-			window.focus();
-			window.removeEventListener('devicemotion', handleMotion);
-			window.addEventListener('devicemotion', handleMotion);
-			if (window.isSecureContext)
-				setMotionStatus("en attente de données (page " + (document.hasFocus() ? "active" : "inactive") + ")");
-		}, 500);
+	if (typeof DeviceMotionEvent != "undefined") {
+		window.addEventListener('devicemotion', handleMotion);
+		requestMotion();
+		canvas.addEventListener('touchend', requestMotion);
+		canvas.addEventListener('mouseup', requestMotion);
+		document.addEventListener('click', requestMotion);
 	}
-	canvas.addEventListener('touchend', startMotion);
-	canvas.addEventListener('mouseup', startMotion);
 
 	// taille simulée : le curseur va de la taille réelle de l'affichage (à gauche) à 3 m (à droite).
 	// réduire la taille du réservoir d'un facteur k revient à multiplier les accélérations par k
