@@ -993,7 +993,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		var px = 1.0 / cScale;		// taille d'un pixel dans la simulation
 		var b = {
 			width : width, height : height, pixels : pixels, texture : null,
-			righting : righting, visible : true,
+			righting : righting, visible : true, grabbed : false,
 			x : 0.0, y : 0.0, angle : 0.0,		// centre de gravité et orientation
 			vx : 0.0, vy : 0.0, omega : 0.0
 		};
@@ -1103,6 +1103,8 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 	function placeBody(b, x, y)
 	{
+		if (b == grabbedBody)
+			releaseBody();
 		b.x = x - b.centerX; b.y = y - b.centerY; b.angle = 0.0;
 		b.vx = 0.0; b.vy = 0.0; b.omega = 0.0;
 	}
@@ -1425,11 +1427,16 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		if (contact.depth == 0.0)
 			return;
 
-		// séparation, répartie selon les masses : le plus léger recule le plus
+		// séparation, répartie selon les masses : le plus léger recule le plus.
+		// un corps tenu par le doigt ne recule pas : il compte comme infiniment lourd
 		var nx = contact.nx;
 		var ny = contact.ny;
-		var wa = 1.0 / a.mass;
-		var wb = 1.0 / b.mass;
+		var wa = a.grabbed ? 0.0 : 1.0 / a.mass;
+		var wb = b.grabbed ? 0.0 : 1.0 / b.mass;
+		var ia = a.grabbed ? 0.0 : 1.0 / a.inertia;
+		var ib = b.grabbed ? 0.0 : 1.0 / b.inertia;
+		if (wa + wb == 0.0)
+			return;
 		var depth = contact.depth / cScale;
 		a.x += nx * depth * wa / (wa + wb);
 		a.y += ny * depth * wa / (wa + wb);
@@ -1445,13 +1452,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		var ran = rax * ny - ray * nx;
 		var rbn = rbx * ny - rby * nx;
-		var j = -(1.0 + bodyRestitution) * vn / (wa + wb + ran * ran / a.inertia + rbn * rbn / b.inertia);
+		var j = -(1.0 + bodyRestitution) * vn / (wa + wb + ran * ran * ia + rbn * rbn * ib);
 		a.vx += j * nx * wa;
 		a.vy += j * ny * wa;
-		a.omega += j * ran / a.inertia;
+		a.omega += j * ran * ia;
 		b.vx -= j * nx * wb;
 		b.vy -= j * ny * wb;
-		b.omega -= j * rbn / b.inertia;
+		b.omega -= j * rbn * ib;
 	}
 
 	function simulateBodies(dt, gravityX, gravityY)
@@ -1502,8 +1509,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		var airFactor = Math.exp(-bodyAirDamping * timeScale * sdt);
 
 		for (var step = 0; step < numSteps; step++) {
-			for (var i = 0; i < active.length; i++)
-				stepBody(active[i], f, sdt, gravityX, gravityY, dragRate, rollRate, airFactor);
+			for (var i = 0; i < active.length; i++) {
+				if (!active[i].grabbed)
+					stepBody(active[i], f, sdt, gravityX, gravityY, dragRate, rollRate, airFactor);
+			}
 			for (var i = 0; i < active.length; i++) {
 				for (var j = i + 1; j < active.length; j++)
 					collideBodies(active[i], active[j]);
@@ -1514,10 +1523,99 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			active[i].angle = Math.atan2(Math.sin(active[i].angle), Math.cos(active[i].angle));
 	}
 
+	// glisser-déposer : un corps saisi suit le doigt, n'est plus soumis à l'eau ni à la gravité,
+	// et repart avec la vitesse du doigt quand on le lâche
+
+	var bodyGrabMargin = 10;		// tolérance autour de la forme pour la saisir, en pixels
+	var bodyThrowSpeed = 8.0;		// vitesse maximale au lâcher
+
+	var grabbedBody = null;
+	var grabX = 0.0;				// point saisi, dans le repère du corps
+	var grabY = 0.0;
+	var grabTime = 0.0;				// heure du dernier déplacement du doigt, en millisecondes
+
+	// vrai si le point (x, y) est sur la forme du corps, à la tolérance près
+	function hitBody(b, x, y)
+	{
+		var c = Math.cos(b.angle), s = Math.sin(b.angle);
+		var dx = x - b.x;
+		var dy = y - b.y;
+		var col = ((c * dx + s * dy) - b.centerX) * cScale + 0.5 * b.width;
+		var row = 0.5 * b.height - ((-s * dx + c * dy) - b.centerY) * cScale;
+
+		for (var oy = -bodyGrabMargin; oy <= bodyGrabMargin; oy += 5) {
+			for (var ox = -bodyGrabMargin; ox <= bodyGrabMargin; ox += 5) {
+				var pc = Math.floor(col + ox);
+				var pr = Math.floor(row + oy);
+				if (pc >= 0 && pc < b.width && pr >= 0 && pr < b.height && b.depth[pr * b.width + pc] > 0.0)
+					return true;
+			}
+		}
+		return false;
+	}
+
+	function grabBody(x, y)
+	{
+		// le bateau d'abord : plus petit, il serait impossible à saisir devant l'iceberg
+		for (var i = 0; i < bodies.length; i++) {
+			var b = bodies[i];
+			if (!b.visible || !hitBody(b, x, y))
+				continue;
+			var c = Math.cos(b.angle), s = Math.sin(b.angle);
+			grabbedBody = b;
+			grabX = c * (x - b.x) + s * (y - b.y);
+			grabY = -s * (x - b.x) + c * (y - b.y);
+			grabTime = performance.now();
+			b.grabbed = true;
+			b.vx = 0.0; b.vy = 0.0; b.omega = 0.0;
+			return true;
+		}
+		return false;
+	}
+
+	function moveGrabbedBody(x, y)
+	{
+		var b = grabbedBody;
+		var c = Math.cos(b.angle), s = Math.sin(b.angle);
+		var nx = clamp(x, 0.0, simWidth) - (c * grabX - s * grabY);
+		var ny = clamp(y, 0.0, simHeight) - (s * grabX + c * grabY);
+
+		// vitesse du doigt, lissée, gardée pour le lâcher et pour les chocs avec l'autre corps
+		var now = performance.now();
+		var dt = Math.max((now - grabTime) / 1000.0, 0.004);
+		b.vx += 0.5 * ((nx - b.x) / dt - b.vx);
+		b.vy += 0.5 * ((ny - b.y) / dt - b.vy);
+		grabTime = now;
+
+		b.x = nx;
+		b.y = ny;
+	}
+
+	function releaseBody()
+	{
+		var b = grabbedBody;
+		if (b == null)
+			return;
+		grabbedBody = null;
+		b.grabbed = false;
+
+		// doigt immobile avant le lâcher : le corps tombe sans élan
+		var speed = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+		if (performance.now() - grabTime > 100.0 || speed == 0.0) {
+			b.vx = 0.0; b.vy = 0.0;
+		}
+		else if (speed > bodyThrowSpeed) {
+			b.vx *= bodyThrowSpeed / speed;
+			b.vy *= bodyThrowSpeed / speed;
+		}
+	}
+
 	// affiche ou masque un corps ; masqué, il n'est plus simulé et ne gêne plus l'autre
 
 	function setBodyVisible(b, visible)
 	{
+		if (b == grabbedBody)
+			releaseBody();
 		b.visible = visible;
 		b.vx = 0.0; b.vy = 0.0; b.omega = 0.0;
 	}
@@ -1731,9 +1829,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		// corps flottants : dessinés avant l'eau, les particules masquent leur partie immergée
 
-		if (iceberg.visible)
+		if (iceberg.visible && !iceberg.grabbed)
 			drawBody(iceberg, 1.0);
-		if (boat.visible)
+		if (boat.visible && !boat.grabbed)
 			drawBody(boat, 1.0);
 
 		// water
@@ -1774,8 +1872,13 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 		// l'iceberg se devine à travers l'eau
 
-		if (iceberg.visible && icebergGhost > 0.0)
+		if (iceberg.visible && !iceberg.grabbed && icebergGhost > 0.0)
 			drawBody(iceberg, icebergGhost);
+
+		// un corps tenu par le doigt reste visible par-dessus l'eau
+
+		if (grabbedBody != null)
+			drawBody(grabbedBody, 1.0);
 
 		// disk
 
@@ -1892,6 +1995,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 		x = mx / cScale;
 		y = (canvas.height - my) / cScale;
 
+		// le doigt posé sur le bateau ou l'iceberg le saisit ; ailleurs, c'est le cercle noir
+		if (grabBody(x, y))
+			return;
+
 		setObstacle(x,y, true);
 		scene.paused = false;
 	}
@@ -1903,11 +2010,15 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 			let my = (y - bounds.top - canvas.clientTop) * canvas.height / bounds.height;
 			x = mx / cScale;
 			y = (canvas.height - my) / cScale;
-			setObstacle(x,y, false);
+			if (grabbedBody != null)
+				moveGrabbedBody(x, y);
+			else
+				setObstacle(x,y, false);
 		}
 	}
 
 	function endDrag() {
+		releaseBody();
 		mouseDown = false;
 		scene.showObstacle = false;
 		scene.obstacleVelX = 0.0;
